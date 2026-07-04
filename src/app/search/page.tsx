@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
+import { removeCategoryDuplicateServices } from '@/lib/provider-name-service-inference'
 
 type FeaturedLoadStatus = 'idle' | 'loading' | 'ready' | 'delayed' | 'error'
 type SortOption = 'distance' | 'rating' | 'review_count'
@@ -245,7 +246,11 @@ function SearchContent() {
   }, [sortedProviders, featuredLoadStatus])
 
   const getPrimaryTags = (provider: any) => {
-    if (provider.services?.length) return provider.services.slice(0, 2)
+    const visibleConfirmedServices = removeCategoryDuplicateServices({
+      category: provider.category,
+      services: provider.services,
+    })
+    if (visibleConfirmedServices.length) return visibleConfirmedServices.slice(0, 2)
     if (provider.animals_served?.length) return provider.animals_served.slice(0, 2)
     if (provider.breeds_specialised?.length) return provider.breeds_specialised.slice(0, 2)
     if (provider.breeds_general_inferred?.length) {

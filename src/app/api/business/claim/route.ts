@@ -5,6 +5,10 @@ import { createAdminClient } from '@/utils/supabase/admin'
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { resolvePersistableProviderCategory } from '@/lib/provider-category'
 import {
+  inferServicesFromBusinessName,
+  removeCategoryDuplicateServices,
+} from '@/lib/provider-name-service-inference'
+import {
   getBreedAnalysisPersistence,
   hasMeaningfulBreedAnalysis,
   shouldAutoRetryBreedAnalysis,
@@ -12,6 +16,14 @@ import {
 import { getWebsiteAnalysisMessage, type WebsiteAnalysisStatus } from '@/lib/website-analysis-status'
 
 const supabaseAdmin = createAdminClient()
+
+function isMissingInferredServicesColumnError(error: { code?: string; message?: string } | null | undefined) {
+  return (
+    error?.code === 'PGRST204' &&
+    typeof error.message === 'string' &&
+    error.message.includes('services_inferred_from_name')
+  )
+}
 
 function shouldRunWebsiteAnalysis(provider: {
   ai_tagged_at?: string | null
@@ -127,6 +139,7 @@ export async function POST(request: Request) {
         message: string
         animals_served?: string[]
         services?: string[]
+        services_inferred_from_name?: string[]
         breeds_specialised?: string[]
         breeds_general_inferred?: string[]
         ai_tagged_at?: string | null
@@ -142,12 +155,28 @@ export async function POST(request: Request) {
       }
     | null = null
 
-  const shouldAnalyzeWebsite = Boolean(website) && (!existing || shouldRunWebsiteAnalysis(existing))
+  const shouldAnalyzeWebsite = Boolean(website) && (!existing || !existing.website || shouldRunWebsiteAnalysis(existing))
 
   if (!website) {
+    const inferredServicesFromName = inferServicesFromBusinessName({
+      name,
+      category: resolvedCategory,
+      confirmedServices: existing?.services || [],
+    })
+
+    const { error: inferenceUpdateError } = await supabaseAdmin
+      .from('pf_providers')
+      .update({ services_inferred_from_name: inferredServicesFromName })
+      .eq('id', providerId)
+
+    if (inferenceUpdateError && !isMissingInferredServicesColumnError(inferenceUpdateError)) {
+      return NextResponse.json({ error: inferenceUpdateError.message }, { status: 500 })
+    }
+
     taggingResult = {
       status: 'failed',
       message: 'Claim succeeded, but automatic website analysis could not run because no website URL is saved yet.',
+      services_inferred_from_name: inferredServicesFromName,
     }
   } else if (!shouldAnalyzeWebsite) {
     taggingResult = {
@@ -161,11 +190,20 @@ export async function POST(request: Request) {
     try {
       const { normalizedWebsite, pagesAnalysed, pagesAttempted, pagesFetched, aiTags, skippedLowContent, bookingAnalysis } =
         await tagProviderWebsite(website)
+      const normalizedConfirmedServices = removeCategoryDuplicateServices({
+        category: resolvedCategory,
+        services: aiTags.services,
+      })
+      const inferredServicesFromName = inferServicesFromBusinessName({
+        name,
+        category: resolvedCategory,
+        confirmedServices: normalizedConfirmedServices,
+      })
       const aiTaggedAt = new Date().toISOString()
       const bookingCheckedAt = new Date().toISOString()
       const persistence = getBreedAnalysisPersistence(existing || {}, {
         animals_served: aiTags.animals_served,
-        services: aiTags.services,
+        services: normalizedConfirmedServices,
         breeds_specialised: aiTags.breeds_specialised,
         breeds_general_inferred: aiTags.breeds_general_inferred,
       })
@@ -173,7 +211,8 @@ export async function POST(request: Request) {
       const { error: taggingError } = await persistProviderAiTags(supabaseAdmin, providerId, {
         website: normalizedWebsite,
         animals_served: aiTags.animals_served,
-        services: aiTags.services,
+        services: normalizedConfirmedServices,
+        services_inferred_from_name: inferredServicesFromName,
         breeds_specialised: aiTags.breeds_specialised,
         breeds_general_inferred: aiTags.breeds_general_inferred,
         ai_tagged_at: aiTaggedAt,
@@ -197,7 +236,8 @@ export async function POST(request: Request) {
           status: skippedLowContent ? 'skipped_low_content' : 'completed',
           message: getWebsiteAnalysisMessage(skippedLowContent ? 'skipped_low_content' : 'completed'),
           animals_served: aiTags.animals_served,
-          services: aiTags.services,
+          services: normalizedConfirmedServices,
+          services_inferred_from_name: inferredServicesFromName,
           breeds_specialised: aiTags.breeds_specialised,
           breeds_general_inferred: aiTags.breeds_general_inferred,
           ai_tagged_at: aiTaggedAt,
@@ -226,13 +266,18 @@ export async function POST(request: Request) {
           .update({
             website,
             ai_tagging_skipped_low_content: true,
+            services_inferred_from_name: inferServicesFromBusinessName({
+              name,
+              category: resolvedCategory,
+              confirmedServices: existing?.services || [],
+            }),
             tagging_attempt_count: persistence.taggingAttemptCount,
             breed_analysis_exhausted: persistence.breedAnalysisExhausted,
             is_claimed: true,
           })
           .eq('id', providerId)
 
-        if (blockedUpdateError) {
+        if (blockedUpdateError && !isMissingInferredServicesColumnError(blockedUpdateError)) {
           console.error('[business-claim] failed to persist blocked website fetch status', blockedUpdateError)
           taggingResult = {
             status: 'failed',

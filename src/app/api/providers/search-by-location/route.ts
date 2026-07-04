@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { getAnimalForBreed } from '@/lib/breed-taxonomy'
+import { inferServicesFromBusinessName } from '@/lib/provider-name-service-inference'
 
 type SearchCoords = {
   lat: number
@@ -109,6 +110,14 @@ async function getEnrichedPlaces(
   return places.map((place: any) => {
     const dbMatch = dbProvidersByPlaceId.get(place.id)
     const providerReviews = dbMatch ? reviewsByProviderId.get(dbMatch.id) || [] : []
+    const inferredServicesFromName =
+      Array.isArray(dbMatch?.services_inferred_from_name) && dbMatch.services_inferred_from_name.length > 0
+        ? dbMatch.services_inferred_from_name
+        : inferServicesFromBusinessName({
+            name: dbMatch?.name || place.name,
+            category: dbMatch?.category || category,
+            confirmedServices: dbMatch?.services || [],
+          })
     const native_rating =
       providerReviews.length > 0
         ? {
@@ -132,6 +141,7 @@ async function getEnrichedPlaces(
       is_claimed: dbMatch?.is_claimed || false,
       animals_served: dbMatch?.animals_served || [],
       services: dbMatch?.services || [],
+      services_inferred_from_name: inferredServicesFromName,
       breeds_specialised: dbMatch?.breeds_specialised || [],
       breeds_general_inferred: dbMatch?.breeds_general_inferred || [],
       native_rating,

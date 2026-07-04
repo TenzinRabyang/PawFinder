@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server'
 
+import {
+  getProviderForPlaceIdRecovery,
+  resolvePlaceDetailsWithAutoHeal,
+} from '@/lib/provider-place-id-recovery'
+import { createAdminClient } from '@/utils/supabase/admin'
+
 async function summarizeReviewsWithDeepSeek(name: string, reviews: Array<{ rating?: number; text?: string; relative_time_description?: string }>) {
   const key = process.env.DEEPSEEK_API_KEY
   if (!key || reviews.length === 0) return null
@@ -37,23 +43,33 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const { searchParams } = new URL(request.url)
   const includeAiSummary = searchParams.get('include_ai_summary') === '1'
-  
-  // id is now the Google Place ID
-
   const key = process.env.GOOGLE_PLACES_API_KEY
   if (!key || !id) {
     return NextResponse.json({ error: 'Missing API key or place ID' }, { status: 400 })
   }
 
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${id}&fields=name,formatted_address,formatted_phone_number,website,photos,reviews,rating,user_ratings_total,opening_hours,types&key=${key}`
-  const res = await fetch(url)
-  const data = await res.json()
+  const supabaseAdmin = createAdminClient()
+  const { data: provider, error: providerError } = await getProviderForPlaceIdRecovery(supabaseAdmin, id)
 
-  if (data.status !== 'OK') {
+  if (providerError) {
+    return NextResponse.json({ error: providerError.message }, { status: 500 })
+  }
+
+  const resolvedDetails = await resolvePlaceDetailsWithAutoHeal({
+    requestedPlaceId: id,
+    fields:
+      'place_id,name,formatted_address,formatted_phone_number,website,photos,reviews,rating,user_ratings_total,opening_hours,types',
+    googleApiKey: key,
+    provider,
+    supabase: supabaseAdmin,
+    source: 'provider-live-details',
+  })
+
+  if (resolvedDetails.status !== 'OK') {
     return NextResponse.json({ error: 'Failed to fetch place details' }, { status: 500 })
   }
 
-  const result = data.result
+  const result = resolvedDetails.result || {}
   if (!includeAiSummary) {
     return NextResponse.json(result)
   }

@@ -61,8 +61,11 @@ export function ClaimListingCard({ claimId }: ClaimListingCardProps) {
   const claimPayload = useMemo(() => {
     if (!details) return null
 
+    const canonicalPlaceId =
+      typeof details.place_id === 'string' && details.place_id.trim() ? details.place_id : claimId
+
     return {
-      google_place_id: claimId,
+      google_place_id: canonicalPlaceId,
       name: details.name,
       address: details.formatted_address || '',
       website: details.website || '',

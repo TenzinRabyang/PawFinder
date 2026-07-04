@@ -4,6 +4,18 @@ import { tagProviderWebsite, WebsiteFetchError } from '@/lib/provider-ai-tagging
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { getBreedAnalysisPersistence } from '@/lib/provider-analysis-state'
 import { getWebsiteAnalysisMessage, type WebsiteAnalysisStatus } from '@/lib/website-analysis-status'
+import {
+  inferServicesFromBusinessName,
+  removeCategoryDuplicateServices,
+} from '@/lib/provider-name-service-inference'
+
+function isMissingInferredServicesColumnError(error: { code?: string; message?: string } | null | undefined) {
+  return (
+    error?.code === 'PGRST204' &&
+    typeof error.message === 'string' &&
+    error.message.includes('services_inferred_from_name')
+  )
+}
 
 export async function POST() {
   const supabase = await createClient()
@@ -28,7 +40,7 @@ export async function POST() {
 
   const { data: provider, error: providerError } = await supabase
     .from('pf_providers')
-    .select('id, website, tagging_attempt_count, ai_tagging_skipped_low_content, ai_tagged_at, breed_analysis_exhausted, animals_served, breeds_specialised, breeds_general_inferred')
+    .select('id, name, category, website, services, tagging_attempt_count, ai_tagging_skipped_low_content, ai_tagged_at, breed_analysis_exhausted, animals_served, breeds_specialised, breeds_general_inferred')
     .eq('id', profile.owned_provider_id)
     .single()
 
@@ -43,11 +55,20 @@ export async function POST() {
   try {
     const { normalizedWebsite, pagesAnalysed, pagesAttempted, pagesFetched, aiTags, skippedLowContent, bookingAnalysis } =
       await tagProviderWebsite(provider.website)
+    const normalizedConfirmedServices = removeCategoryDuplicateServices({
+      category: provider.category,
+      services: aiTags.services,
+    })
+    const inferredServicesFromName = inferServicesFromBusinessName({
+      name: provider.name,
+      category: provider.category,
+      confirmedServices: normalizedConfirmedServices,
+    })
     const aiTaggedAt = new Date().toISOString()
     const bookingCheckedAt = new Date().toISOString()
     const persistence = getBreedAnalysisPersistence(provider, {
       animals_served: aiTags.animals_served,
-      services: aiTags.services,
+      services: normalizedConfirmedServices,
       breeds_specialised: aiTags.breeds_specialised,
       breeds_general_inferred: aiTags.breeds_general_inferred,
     })
@@ -55,7 +76,8 @@ export async function POST() {
     const { error: updateError } = await persistProviderAiTags(supabase, provider.id, {
       website: normalizedWebsite,
       animals_served: aiTags.animals_served,
-      services: aiTags.services,
+      services: normalizedConfirmedServices,
+      services_inferred_from_name: inferredServicesFromName,
       breeds_specialised: aiTags.breeds_specialised,
       breeds_general_inferred: aiTags.breeds_general_inferred,
       ai_tagged_at: aiTaggedAt,
@@ -85,7 +107,8 @@ export async function POST() {
         tagging_attempt_count: persistence.taggingAttemptCount,
         breed_analysis_exhausted: persistence.breedAnalysisExhausted,
         animals_served: aiTags.animals_served,
-        services: aiTags.services,
+        services: normalizedConfirmedServices,
+        services_inferred_from_name: inferredServicesFromName,
         breeds_specialised: aiTags.breeds_specialised,
         breeds_general_inferred: aiTags.breeds_general_inferred,
         has_online_booking: bookingAnalysis.hasOnlineBooking,
@@ -106,13 +129,18 @@ export async function POST() {
         .from('pf_providers')
         .update({
           ai_tagging_skipped_low_content: true,
+          services_inferred_from_name: inferServicesFromBusinessName({
+            name: provider.name,
+            category: provider.category,
+            confirmedServices: provider.services || [],
+          }),
           tagging_attempt_count: persistence.taggingAttemptCount,
           breed_analysis_exhausted: persistence.breedAnalysisExhausted,
           is_claimed: true,
         })
         .eq('id', provider.id)
 
-      if (blockedUpdateError) {
+      if (blockedUpdateError && !isMissingInferredServicesColumnError(blockedUpdateError)) {
         return NextResponse.json({ error: blockedUpdateError.message }, { status: 500 })
       }
 

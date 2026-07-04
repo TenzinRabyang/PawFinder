@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server'
 
+import {
+  getProviderForPlaceIdRecovery,
+  resolvePlaceDetailsWithAutoHeal,
+} from '@/lib/provider-place-id-recovery'
+import { createAdminClient } from '@/utils/supabase/admin'
+
 async function summarizeReviewsWithDeepSeek(
   name: string,
   reviews: Array<{ rating?: number; text?: string; relative_time_description?: string }>
@@ -45,17 +51,28 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Missing provider id or Google API key' }, { status: 400 })
   }
 
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(id)}&fields=name,photos,reviews,rating,user_ratings_total&key=${key}`
-
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(6000) })
-    const data = await res.json()
+    const supabaseAdmin = createAdminClient()
+    const { data: provider, error: providerError } = await getProviderForPlaceIdRecovery(supabaseAdmin, id)
 
-    if (data.status !== 'OK') {
+    if (providerError) {
+      return NextResponse.json({ error: providerError.message }, { status: 500 })
+    }
+
+    const resolvedDetails = await resolvePlaceDetailsWithAutoHeal({
+      requestedPlaceId: id,
+      fields: 'place_id,name,photos,reviews,rating,user_ratings_total',
+      googleApiKey: key,
+      provider,
+      supabase: supabaseAdmin,
+      source: 'provider-featured-enrichment',
+    })
+
+    if (resolvedDetails.status !== 'OK') {
       return NextResponse.json({ error: 'Failed to fetch featured enrichment' }, { status: 500 })
     }
 
-    const result = data.result || {}
+    const result = resolvedDetails.result || {}
     const reviews = (result.reviews || []).slice(0, 2).map((review: any) => ({
       author_name: review.author_name,
       rating: review.rating,
@@ -65,6 +82,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const aiSummary = await summarizeReviewsWithDeepSeek(result.name || 'this business', reviews)
 
     return NextResponse.json({
+      id: result.place_id || id,
+      google_place_id: result.place_id || id,
       photo_reference: result.photos?.[0]?.photo_reference || null,
       google_rating: result.rating
         ? {

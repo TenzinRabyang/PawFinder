@@ -15,6 +15,8 @@ type AnalysisFields = {
 export type BreedAnalysisStatus =
   | 'confirmed'
   | 'retrying'
+  | 'photo_retrying'
+  | 'photo_exhausted'
   | 'unavailable'
   | 'fetch_blocked'
   | 'no_website'
@@ -29,10 +31,6 @@ function hasNoWebsite(provider: AnalysisFields) {
 }
 
 export function hasMeaningfulBreedAnalysis(provider: AnalysisFields) {
-  if (!provider.ai_tagged_at) {
-    return false
-  }
-
   return (
     getLength(provider.breeds_specialised) > 0 ||
     getLength(provider.animals_served) > 0 ||
@@ -109,6 +107,10 @@ export function getBreedAnalysisStatus(provider: AnalysisFields): BreedAnalysisS
   }
 
   if (hasNoWebsite(provider)) {
+    if (getTaggingAttemptCount(provider) > 0) {
+      return hasAnalysisAttemptsRemaining(provider) ? 'photo_retrying' : 'photo_exhausted'
+    }
+
     return 'no_website'
   }
 

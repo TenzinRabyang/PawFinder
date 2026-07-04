@@ -4,6 +4,7 @@ type ProviderAiTagPayload = {
   website: string | null
   animals_served: string[]
   services: string[]
+  services_inferred_from_name: string[]
   breeds_specialised: string[]
   breeds_general_inferred: string[]
   ai_tagged_at: string
@@ -16,6 +17,14 @@ type ProviderAiTagPayload = {
   booking_checked_at: string
 }
 
+function isMissingInferredServicesColumnError(error: { code?: string; message?: string } | null | undefined) {
+  return (
+    error?.code === 'PGRST204' &&
+    typeof error.message === 'string' &&
+    error.message.includes('services_inferred_from_name')
+  )
+}
+
 export async function persistProviderAiTags(
   supabase: SupabaseClient,
   providerId: string,
@@ -25,6 +34,7 @@ export async function persistProviderAiTags(
     website: payload.website,
     animals_served: payload.animals_served,
     services: payload.services,
+    services_inferred_from_name: payload.services_inferred_from_name,
     breeds_specialised: payload.breeds_specialised,
     breeds_general_inferred: payload.breeds_general_inferred,
     ai_tagged_at: payload.ai_tagged_at,
@@ -42,5 +52,12 @@ export async function persistProviderAiTags(
   }
 
   const { error } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId)
-  return { error }
+
+  if (!isMissingInferredServicesColumnError(error)) {
+    return { error }
+  }
+
+  delete updatePayload.services_inferred_from_name
+  const { error: retryError } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId)
+  return { error: retryError }
 }

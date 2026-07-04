@@ -10,9 +10,15 @@ import { ProviderImage } from '@/components/ProviderImage'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   getBreedAnalysisStatus,
+  hasAnalysisAttemptsRemaining,
+  hasMeaningfulBreedAnalysis,
   shouldAutoRetryBreedAnalysis,
   shouldRefreshIncompleteBreedCoverage,
 } from '@/lib/provider-analysis-state'
+import {
+  inferServicesFromBusinessName,
+  removeCategoryDuplicateServices,
+} from '@/lib/provider-name-service-inference'
 
 export default function ProviderProfile({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
@@ -33,6 +39,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     | 'generating'
     | 'confirmed'
     | 'retrying'
+    | 'photo_retrying'
+    | 'photo_exhausted'
     | 'unavailable'
     | 'services_only'
     | 'delayed'
@@ -90,8 +98,12 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         return "We weren't able to access this business's website for automatic analysis."
       case 'retrying':
         return "We're still gathering breed info for this business."
+      case 'photo_retrying':
+        return "We couldn't confirm animals from the available Google photos yet, but we'll keep trying while attempts remain."
+      case 'photo_exhausted':
+        return "We checked this business's Google photos but still couldn't confidently confirm which animals appear."
       case 'no_website':
-        return "This business hasn't listed a website, so we can't automatically analyse their services and breed coverage yet."
+        return "This business hasn't listed a website, so we can't automatically analyse website content yet."
       case 'category_unresolved':
         return "We couldn't classify this business from the available listing data yet, so automatic website analysis hasn't started."
       case 'unavailable':
@@ -138,10 +150,24 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const supportedAnimalLabels = supportedAnimals.map((animal: string) =>
     animal === 'dog' ? 'Dogs' : animal === 'cat' ? 'Cats' : animal === 'rabbit' ? 'Rabbits' : animal
   )
-  const displayedServiceCategories = [
-    formatCategoryLabel(provider?.category),
-    ...(Array.isArray(provider?.services) ? provider.services.map(formatServiceLabel) : []),
-  ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+  const visibleConfirmedServiceValues = removeCategoryDuplicateServices({
+    category: provider?.category,
+    services: provider?.services,
+  })
+  const visibleConfirmedServiceLabels = visibleConfirmedServiceValues.map(formatServiceLabel)
+  const savedOrDerivedInferredServiceValues =
+    Array.isArray(provider?.services_inferred_from_name) && provider.services_inferred_from_name.length > 0
+      ? provider.services_inferred_from_name
+      : inferServicesFromBusinessName({
+          name: provider?.name,
+          category: provider?.category,
+          confirmedServices: visibleConfirmedServiceValues,
+        })
+  const visibleInferredServiceValues = removeCategoryDuplicateServices({
+    category: provider?.category,
+    services: savedOrDerivedInferredServiceValues,
+  }).filter((service) => !visibleConfirmedServiceValues.includes(service))
+  const visibleInferredServiceLabels = visibleInferredServiceValues.map(formatServiceLabel)
   const isAnalysisPending = breedTagStatus === 'loading' || breedTagStatus === 'generating'
   const analysisLoadingLabel =
     breedTagStatus === 'generating' ? 'Analysing this business...' : 'Checking saved profile details...'
@@ -165,7 +191,12 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     fetchData()
   }, [id, isFeaturedProfile, requestedCategory])
 
-  const refreshSavedWebsiteAnalysis = async (placeId: string, baseProvider: any, website: string, liveData: any) => {
+  const refreshSavedProviderAnalysis = async (
+    placeId: string,
+    baseProvider: any,
+    website: string | null | undefined,
+    liveData: any
+  ) => {
     setBreedTagStatus('generating')
 
     try {
@@ -177,7 +208,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           address: baseProvider.address,
           category: baseProvider.category,
           googleTypes: liveData.types || [],
-          website,
+          website: website || '',
           phone: liveData.formatted_phone_number || baseProvider.phone,
         }),
         signal: AbortSignal.timeout(15000),
@@ -283,7 +314,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       if (res && res.headers.get('content-type')?.includes('application/json')) {
         data = await res.json()
       }
-      
+
+      const canonicalPlaceId = typeof data.place_id === 'string' && data.place_id ? data.place_id : id
+
       if (res?.ok && !data.error) {
         setLiveDetails(data)
       }
@@ -292,20 +325,21 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       const { data: prov } = await supabase
         .from('pf_providers')
         .select('*')
-        .eq('google_place_id', id)
+        .eq('google_place_id', canonicalPlaceId)
         .maybeSingle()
 
       let resolvedProvider = prov
         ? {
             ...prov,
+            google_place_id: canonicalPlaceId,
             name: data.name || prov.name,
             address: data.formatted_address || prov.address,
             website: data.website || prov.website,
             phone: data.formatted_phone_number || prov.phone,
           }
         : {
-            id: id,
-            google_place_id: id,
+            id: canonicalPlaceId,
+            google_place_id: canonicalPlaceId,
             name: data.name || 'Unknown Provider',
             address: data.formatted_address || '',
             category:
@@ -334,13 +368,22 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       const shouldRefreshBreedCoverage = shouldRefreshIncompleteBreedCoverage(resolvedProvider)
       const shouldRetryAnalysis = shouldAutoRetryBreedAnalysis(resolvedProvider)
       const providerWebsite = data.website || resolvedProvider.website
+      const shouldAnalyzeFreshWebsite = Boolean(data.website && !resolvedProvider.website)
+      const hasGooglePhotos = Array.isArray(data.photos) && data.photos.length > 0
+      const shouldRetryPhotoAnalysis =
+        !providerWebsite &&
+        hasGooglePhotos &&
+        !hasMeaningfulBreedAnalysis(resolvedProvider) &&
+        hasAnalysisAttemptsRemaining(resolvedProvider)
 
-      if (!shouldRetryAnalysis && !shouldRefreshBreedCoverage) {
+      if (!shouldRetryAnalysis && !shouldRefreshBreedCoverage && !shouldRetryPhotoAnalysis && !shouldAnalyzeFreshWebsite) {
         setBreedTagStatus(currentAnalysisStatus)
       } else if (providerWebsite) {
-        void refreshSavedWebsiteAnalysis(id, resolvedProvider, providerWebsite, data)
+        void refreshSavedProviderAnalysis(canonicalPlaceId, resolvedProvider, providerWebsite, data)
+      } else if (shouldRetryPhotoAnalysis) {
+        void refreshSavedProviderAnalysis(canonicalPlaceId, resolvedProvider, null, data)
       } else {
-        setBreedTagStatus('no_website')
+        setBreedTagStatus(currentAnalysisStatus)
       }
       setProvider(resolvedProvider)
 
@@ -484,6 +527,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
   const locationLabel = provider.address || provider.postcode || 'Address unavailable'
+  const hasWebsiteForAnalysis = Boolean((provider.website || liveDetails?.website || '').trim())
+  const generalCoverageHeading = hasWebsiteForAnalysis ? 'Inferred from website' : 'Inferred from photos'
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
@@ -631,31 +676,43 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                           </div>
                         </div>
                       </div>
-                    ) : displayedServiceCategories.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {displayedServiceCategories.map((service, index) => (
-                          <span
-                            key={service}
-                            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-transform duration-200 hover:-translate-y-0.5 ${
-                              service === categoryLabel
-                                ? 'border-[#3D5A45]/20 bg-[#3D5A45]/12 text-[#3D5A45]'
-                                : index === 0
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full border border-[#3D5A45]/20 bg-[#3D5A45]/12 px-3 py-1.5 text-sm font-medium text-[#3D5A45]">
+                            {categoryLabel}
+                          </span>
+                          {visibleConfirmedServiceLabels.map((service, index) => (
+                            <span
+                              key={service}
+                              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-transform duration-200 hover:-translate-y-0.5 ${
+                                index === 0
                                   ? 'border-[#DDD1C4] bg-[#FFFDF8] text-[#5F5A52]'
                                   : 'border-[#E7DDD2] bg-[#F7F1EA] text-[#6E6A63]'
-                            }`}
-                          >
-                            {service}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-[1.35rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-5">
-                        <div className="text-sm font-medium text-[#585850]">
-                          Service categories could not be confirmed from the business website yet.
+                              }`}
+                            >
+                              {service}
+                            </span>
+                          ))}
                         </div>
-                        <p className="mt-1 text-xs leading-5 text-[#938E86]">
-                          We only show saved service categories after website analysis has finished.
-                        </p>
+
+                        {visibleInferredServiceLabels.length > 0 && (
+                          <div className="rounded-[1.25rem] border border-dashed border-[#D7CCBE] bg-[#FFFDFC] p-4">
+                            <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#8A8176]">
+                              Inferred from business name
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {visibleInferredServiceLabels.map((service) => (
+                                <span
+                                  key={service}
+                                  className="rounded-full border border-[#E5D9C8] bg-[#FBF6EE] px-3 py-1.5 text-sm font-medium text-[#6F675C]"
+                                >
+                                  {service}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -710,7 +767,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         {generalCoverageLabels.length > 0 && (
                           <div>
                             <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
-                              General coverage inferred
+                              {generalCoverageHeading}
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {generalCoverageLabels.map((label: string) => (

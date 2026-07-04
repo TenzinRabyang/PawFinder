@@ -65,6 +65,34 @@ export default async function DashboardPage({
 
   const websiteAnalysisStatus = getWebsiteAnalysisStatus(provider)
   const websiteAnalysisMessage = getWebsiteAnalysisMessage(websiteAnalysisStatus)
+  const hasWebsite = Boolean(provider.website?.trim())
+  const photoAnalysisCompleted = Array.isArray(provider.breeds_general_inferred) && provider.breeds_general_inferred.length > 0
+  const photoAnalysisAttempted = typeof provider.tagging_attempt_count === 'number' && provider.tagging_attempt_count > 0
+  const noWebsiteAnalysisTitle = photoAnalysisCompleted
+    ? 'Photo Analysis Completed'
+    : provider.breed_analysis_exhausted
+    ? 'Photo Analysis Exhausted'
+    : photoAnalysisAttempted
+    ? 'Photo Analysis Retrying'
+    : 'Photo Analysis Pending'
+  const noWebsiteAnalysisMessage = photoAnalysisCompleted
+    ? 'We analyzed this listing’s Google photos and saved broad animal coverage from what was visibly present.'
+    : provider.breed_analysis_exhausted
+    ? "We checked this listing's Google photos but couldn't confidently confirm an animal type."
+    : photoAnalysisAttempted
+    ? "We checked this listing's Google photos but haven't confirmed an animal type yet."
+    : 'This listing has no website, so PawFinder will fall back to Google photos when they are available.'
+  const analysisCardClass = hasWebsite
+    ? websiteAnalysisStatus === 'completed'
+      ? 'border-[#d9e6dd] bg-[#f3f8f5]'
+      : websiteAnalysisStatus === 'fetch_blocked'
+      ? 'border-[#eed8cf] bg-[#fff7f3]'
+      : 'border-stone-200 bg-stone-50'
+    : photoAnalysisCompleted
+    ? 'border-[#d9e6dd] bg-[#f3f8f5]'
+    : provider.breed_analysis_exhausted
+    ? 'border-[#eed8cf] bg-[#fff7f3]'
+    : 'border-stone-200 bg-stone-50'
   const serviceLabels = formatList(provider.services)
   const specialisedBreedLabels = formatList(provider.breeds_specialised)
   const inferredCoverageLabels = formatList(provider.breeds_general_inferred)
@@ -80,8 +108,8 @@ export default async function DashboardPage({
               <p className="text-stone-600 mt-1">{provider.address}</p>
               <p className="mt-2 text-sm text-stone-500">
                 {provider.ai_tagged_at
-                  ? `Last AI website analysis: ${new Date(provider.ai_tagged_at).toLocaleString()}`
-                  : 'AI website analysis has not been completed yet.'}
+                  ? `Last AI ${hasWebsite ? 'website' : 'photo'} analysis: ${new Date(provider.ai_tagged_at).toLocaleString()}`
+                  : `AI ${hasWebsite ? 'website' : 'photo'} analysis has not been completed yet.`}
               </p>
             </div>
             <div className="flex flex-col items-start lg:items-end">
@@ -98,24 +126,22 @@ export default async function DashboardPage({
             </div>
           </div>
 
-          <div className={`mt-6 rounded-xl border p-5 ${
-            websiteAnalysisStatus === 'completed'
-              ? 'border-[#d9e6dd] bg-[#f3f8f5]'
-              : websiteAnalysisStatus === 'fetch_blocked'
-              ? 'border-[#eed8cf] bg-[#fff7f3]'
-              : 'border-stone-200 bg-stone-50'
-          }`}>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">Website Analysis</p>
+          <div className={`mt-6 rounded-xl border p-5 ${analysisCardClass}`}>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
+              {hasWebsite ? 'Website Analysis' : 'Photo Analysis'}
+            </p>
             <h2 className="mt-2 text-lg font-semibold text-stone-900">
-              {websiteAnalysisStatus === 'completed'
-                ? 'Analysis Completed'
-                : websiteAnalysisStatus === 'fetch_blocked'
-                ? 'Website Access Blocked'
-                : websiteAnalysisStatus === 'skipped_low_content'
-                ? 'Not Enough Readable Website Content'
-                : 'Analysis Needs Attention'}
+              {hasWebsite
+                ? websiteAnalysisStatus === 'completed'
+                  ? 'Analysis Completed'
+                  : websiteAnalysisStatus === 'fetch_blocked'
+                  ? 'Website Access Blocked'
+                  : websiteAnalysisStatus === 'skipped_low_content'
+                  ? 'Not Enough Readable Website Content'
+                  : 'Analysis Needs Attention'
+                : noWebsiteAnalysisTitle}
             </h2>
-            <p className="mt-2 text-sm text-stone-600">{websiteAnalysisMessage}</p>
+            <p className="mt-2 text-sm text-stone-600">{hasWebsite ? websiteAnalysisMessage : noWebsiteAnalysisMessage}</p>
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">

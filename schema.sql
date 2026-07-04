@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS pf_providers (
     google_place_id TEXT UNIQUE,
     animals_served TEXT[] DEFAULT '{}',
     services TEXT[] DEFAULT '{}',
+    services_inferred_from_name TEXT[] DEFAULT '{}',
     breeds_specialised TEXT[] DEFAULT '{}',
     breeds_general_inferred TEXT[] DEFAULT '{}',
     is_verified BOOLEAN DEFAULT false,
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS pf_providers (
     ai_tagging_skipped_low_content BOOLEAN DEFAULT false,
     tagging_attempt_count INTEGER DEFAULT 0,
     breed_analysis_exhausted BOOLEAN DEFAULT false,
+    place_id_refresh_attempt_count INTEGER DEFAULT 0,
+    place_id_refresh_exhausted BOOLEAN DEFAULT false,
     review_summary TEXT,
     review_summary_updated_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -83,10 +86,19 @@ ALTER TABLE pf_providers
     ADD COLUMN IF NOT EXISTS breeds_general_inferred TEXT[] DEFAULT '{}';
 
 ALTER TABLE pf_providers
+    ADD COLUMN IF NOT EXISTS services_inferred_from_name TEXT[] DEFAULT '{}';
+
+ALTER TABLE pf_providers
     ADD COLUMN IF NOT EXISTS tagging_attempt_count INTEGER DEFAULT 0;
 
 ALTER TABLE pf_providers
     ADD COLUMN IF NOT EXISTS breed_analysis_exhausted BOOLEAN DEFAULT false;
+
+ALTER TABLE pf_providers
+    ADD COLUMN IF NOT EXISTS place_id_refresh_attempt_count INTEGER DEFAULT 0;
+
+ALTER TABLE pf_providers
+    ADD COLUMN IF NOT EXISTS place_id_refresh_exhausted BOOLEAN DEFAULT false;
 
 ALTER TYPE pf_provider_category ADD VALUE IF NOT EXISTS 'mobile_service';
 ALTER TYPE pf_provider_category ADD VALUE IF NOT EXISTS 'pet_care';
