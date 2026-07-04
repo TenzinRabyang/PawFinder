@@ -10,6 +10,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-quicksand);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +23,74 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@keyframes pawfinderFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pawfinder-fade-up {
+  animation: pawfinderFadeUp 0.45s ease-out both;
+}
+
+.pawfinder-fade-up-delay-1 {
+  animation: pawfinderFadeUp 0.55s ease-out both;
+}
+
+.pawfinder-fade-up-delay-2 {
+  animation: pawfinderFadeUp 0.65s ease-out both;
+}
+
+.pawfinder-fade-up-delay-3 {
+  animation: pawfinderFadeUp 0.75s ease-out both;
+}
+
+.collar-tag {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: 1.25rem;
+  border: 1px solid #b68f3a;
+  background: linear-gradient(135deg, #f9edd0 0%, #f1d18d 100%);
+  color: #6a5121;
+  box-shadow: 0 14px 30px -20px rgba(123, 90, 29, 0.7);
+}
+
+.collar-tag::before {
+  content: "";
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  height: 0.48rem;
+  width: 0.48rem;
+  transform: translateY(-50%);
+  border-radius: 9999px;
+  border: 1px solid rgba(106, 81, 33, 0.35);
+  background: rgba(255, 252, 243, 0.92);
+  box-shadow: inset 0 1px 2px rgba(106, 81, 33, 0.12);
+}
+
+.collar-tag-small {
+  padding: 0.45rem 0.8rem 0.45rem 1.35rem;
+}
+
+.collar-tag-large {
+  padding: 0.75rem 1rem 0.75rem 1.6rem;
+}
+
+.pressable-soft {
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+}
+
+.pressable-soft:active {
+  transform: scale(0.98);
 }

@@ -267,7 +267,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     // Since 'id' is now the Google Place ID from the search page
     // 1. Fetch live details from Google Places first
     try {
-      const detailsUrl = `/api/providers/${encodeURIComponent(id)}/live-details`
+      const detailsUrl = `/api/providers/${encodeURIComponent(id)}/live-details?include_ai_summary=1`
       let res: Response | null = null
       try {
         res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
@@ -464,7 +464,17 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
 
   const isPremium = provider.subscription_tier !== 'free'
   const canShowLivePreview = isPremium || isFeaturedProfile
-  const visibleAiSummary = provider.review_summary
+  const isVerifiedBusiness =
+    provider.is_verified || provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium'
+  const visibleAiSummary = provider.review_summary || liveDetails?.ai_summary || null
+  const visibleAiSummarySourceLabel = provider.review_summary
+    ? 'Based on verified PawFinder reviews'
+    : liveDetails?.ai_summary
+      ? 'Based on recent Google customer reviews'
+      : null
+  const visibleAiSummaryAccentClass = provider.review_summary
+    ? 'bg-[#3D5A45]/12 text-[#3D5A45]'
+    : 'bg-[#F3E3B7] text-[#7A5A19]'
   const websiteUrl = normalizeExternalUrl(provider.website)
   const hasOnlineBooking =
     typeof provider.has_online_booking === 'boolean' ? provider.has_online_booking : Boolean(provider.booking_url)
@@ -472,291 +482,413 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const callNumber = getDisplayPhoneNumber(provider.phone || liveDetails?.formatted_phone_number)
   const isOpenNow = liveDetails?.opening_hours?.open_now
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
+  const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
+  const locationLabel = provider.address || provider.postcode || 'Address unavailable'
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6]">
-      {/* Header Banner */}
-      <div className="bg-stone-800 h-48 relative">
-        {canShowLivePreview && liveDetails?.photos?.[0] && (
-          <div className="absolute inset-0 opacity-60">
-            <ProviderImage
-              photoReference={liveDetails.photos[0].photo_reference}
-              alt={`${provider.name} cover`}
-              sizes="100vw"
-              priority
-            />
-          </div>
-        )}
-      </div>
+    <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top_left,_rgba(201,162,75,0.18),_transparent_42%),radial-gradient(circle_at_top_right,_rgba(61,90,69,0.2),_transparent_38%),linear-gradient(180deg,_#5A6E5B_0%,_#435448_38%,_#FAF6F0_100%)]" />
+        <div className="absolute left-6 top-28 h-40 w-40 rounded-full bg-[#F0E1BD]/35 blur-3xl" />
+        <div className="absolute right-[-3rem] top-10 h-56 w-56 rounded-full bg-[#A3B39A]/25 blur-3xl" />
 
-      <div className="relative z-10 mx-auto -mt-24 max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-6 rounded-2xl border border-stone-100 bg-white p-5 shadow-sm sm:p-8 md:flex-row md:gap-8">
-          
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold text-stone-900 sm:text-4xl">{provider.name}</h1>
-              {canShowLivePreview && <CheckCircle className="w-8 h-8 text-green-500" />}
-            </div>
-            
-            <p className="text-lg text-stone-600 capitalize flex items-center gap-2 mb-4">
-              {formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'}
-            </p>
-
-            <div className="flex items-center gap-2 text-stone-600 mb-6">
-              <MapPin className="w-5 h-5" />
-              <span>{provider.address || provider.postcode}</span>
-            </div>
-
-            <div className="mb-6">
-              <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${isOpenNow === true ? 'bg-green-100 text-green-700' : isOpenNow === false ? 'bg-stone-100 text-stone-600' : 'bg-stone-50 text-stone-400'}`}>
-                {isOpenNow === true ? 'Open now' : isOpenNow === false ? 'Closed now' : 'Opening hours unavailable'}
-              </span>
-            </div>
-
-            <div className="mb-8 flex flex-wrap gap-3">
-              <div className="inline-flex items-center rounded-full bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-700">
-                <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-black shadow-sm text-stone-600">G</span>
-                {liveDetails?.rating ? `${liveDetails.rating}/5` : 'N/A'}
-                <span className="ml-2 text-xs font-medium text-stone-500">
-                  {typeof liveDetails?.user_ratings_total === 'number' ? `(${liveDetails.user_ratings_total}) Google` : 'Google'}
-                </span>
+        <div className="relative h-56 overflow-hidden sm:h-72">
+          {canShowLivePreview && liveDetails?.photos?.[0] ? (
+            <>
+              <div className="absolute inset-0">
+                <ProviderImage
+                  photoReference={liveDetails.photos[0].photo_reference}
+                  alt={`${provider.name} cover`}
+                  sizes="100vw"
+                  priority
+                />
               </div>
-              <div className="inline-flex items-center rounded-full bg-[#829e8d]/10 px-4 py-2 text-sm font-semibold text-[#6c8676]">
-                <Star className="mr-2 h-4 w-4 fill-current" />
-                {nativeRatingSummary ? `${nativeRatingSummary.score}/5` : 'No native reviews yet'}
-                <span className="ml-2 text-xs font-medium text-[#6c8676]/80">
-                  {nativeRatingSummary ? `(${nativeRatingSummary.count}) Verified Reviews` : 'Verified Reviews'}
-                </span>
-              </div>
-            </div>
+              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(33,44,37,0.2)_0%,rgba(33,44,37,0.42)_42%,rgba(33,44,37,0.82)_100%)]" />
+            </>
+          ) : (
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,#6D7E6E_0%,#4C5E50_40%,#3D4E42_100%)]" />
+          )}
+        </div>
 
-            {/* User Review Summary */}
-            {visibleAiSummary && (
-              <div className="rounded-2xl border border-[#e7d7a6] bg-[#fffaf0] p-6 mb-8 shadow-sm">
-                <div className="mb-3 inline-flex items-center rounded-full bg-[#f6edd1] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#8a6d1f]">
-                  User Review Summary
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-[#6c8676] font-semibold">
-                  <ShieldCheck className="w-5 h-5" />
-                  Based on verified reviews from PawFinder users
-                </div>
-                <p className="mt-3 text-stone-700 leading-7">{visibleAiSummary}</p>
-              </div>
-            )}
-
-            <div className="mb-8 grid gap-4 md:grid-cols-2 md:gap-6">
-              <div className="rounded-xl border border-stone-100 bg-stone-50 p-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-stone-500">Service Categories</h3>
-                <div className="mt-3">
-                  {isAnalysisPending ? (
-                    <div className="rounded-2xl border border-dashed border-stone-200 bg-white/70 px-4 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-stone-200 border-t-[#829e8d]" />
-                        <div className="text-sm font-medium text-stone-700">{analysisLoadingLabel}</div>
-                      </div>
-                      <div className="mt-4 space-y-2">
-                        <div className="h-4 w-28 animate-pulse rounded-full bg-stone-200/80" />
-                        <div className="flex flex-wrap gap-2">
-                          <div className="h-8 w-24 animate-pulse rounded-full bg-[#829e8d]/10" />
-                          <div className="h-8 w-20 animate-pulse rounded-full bg-[#829e8d]/10" />
-                        </div>
-                      </div>
-                    </div>
-                  ) : displayedServiceCategories.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {displayedServiceCategories.map((service) => (
-                        <span key={service} className="rounded-full bg-[#829e8d]/10 px-3 py-1.5 text-sm font-medium text-[#6c8676]">
-                          {service}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-stone-200 bg-white/70 px-4 py-5">
-                      <div className="text-sm font-medium text-stone-600">
-                        Service categories could not be confirmed from the business website yet.
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-stone-400">
-                        We only show saved service categories after website analysis has finished.
-                      </p>
-                    </div>
+        <div className="relative z-10 mx-auto -mt-20 max-w-7xl px-4 pb-20 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-6 rounded-[2rem] border border-[#E8DED0] bg-[#FFFDFC]/95 p-5 shadow-[0_20px_60px_-32px_rgba(63,48,31,0.38)] backdrop-blur-sm sm:p-8 lg:flex-row lg:gap-8">
+            <div className="min-w-0 flex-1">
+              <div className="pawfinder-fade-up">
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <span className="inline-flex rounded-full border border-[#D4C7B6] bg-[#F7F0E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#6E6A63]">
+                    {categoryLabel}
+                  </span>
+                  {isVerifiedBusiness && (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-[#3D5A45]/20 bg-[#3D5A45]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#3D5A45]">
+                      <CheckCircle className="h-4 w-4" />
+                      Verified Profile
+                    </span>
                   )}
                 </div>
+
+                <h1 className="font-display text-4xl font-bold tracking-[-0.03em] text-[#2F312E] sm:text-5xl">
+                  {provider.name}
+                </h1>
               </div>
 
-              <div className="rounded-xl border border-stone-100 bg-stone-50 p-5">
-                <h3 className="text-sm font-bold uppercase tracking-wide text-stone-500">Breeds Supported</h3>
-                <div className="mt-3 space-y-4">
-                  {isAnalysisPending ? (
-                    <div className="rounded-2xl border border-dashed border-stone-200 bg-white/70 px-4 py-5">
-                      <div className="flex items-center gap-3">
-                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-stone-200 border-t-[#829e8d]" />
-                        <div className="text-sm font-medium text-stone-700">{analysisLoadingLabel}</div>
+              <div className="pawfinder-fade-up-delay-1 mt-7 rounded-[1.75rem] border border-[#E4D4B0] bg-[linear-gradient(180deg,#FFF7E8_0%,#FFFDF8_100%)] p-5 shadow-[0_16px_38px_-30px_rgba(123,90,29,0.45)] sm:p-6">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="collar-tag collar-tag-large">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-sm font-black text-[#6A5121] shadow-sm">
+                      G
+                    </span>
+                    <div className="leading-tight">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8E6A20]/75">
+                        Google Rating
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-stone-400">
-                        Breed and animal coverage will appear here once the current analysis finishes.
-                      </p>
-                      <div className="mt-4 space-y-3">
-                        <div className="h-4 w-32 animate-pulse rounded-full bg-stone-200/80" />
-                        <div className="flex flex-wrap gap-2">
-                          <div className="h-8 w-28 animate-pulse rounded-full bg-stone-200/80" />
-                          <div className="h-8 w-24 animate-pulse rounded-full bg-stone-200/80" />
-                          <div className="h-8 w-20 animate-pulse rounded-full bg-stone-200/80" />
-                        </div>
+                      <div className="mt-1 flex items-baseline gap-2">
+                        <span className="text-2xl font-black sm:text-[2rem]">
+                          {liveDetails?.rating ? `${liveDetails.rating}` : 'N/A'}
+                        </span>
+                        <span className="text-sm font-semibold text-[#8E6A20]/80">/ 5</span>
                       </div>
                     </div>
-                  ) : displayedBreedValues.length > 0 ||
-                  generalCoverageLabels.length > 0 ||
-                  supportedAnimalLabels.length > 0 ? (
-                    <div className="space-y-4">
-                      {displayedBreedValues.length > 0 &&
-                        (Object.entries(groupedBreeds) as Array<[string, string[]]>).map(([animal, breeds]) => (
-                          <div key={animal}>
-                            <div className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500">
-                              {animal === 'other' ? 'Specialised coverage' : `${animal} specialisms`}
+                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
+                      {typeof liveDetails?.user_ratings_total === 'number'
+                        ? `${liveDetails.user_ratings_total} reviews`
+                        : 'Live'}
+                    </span>
+                  </div>
+
+                  <div className="inline-flex items-center rounded-full border border-[#3D5A45]/15 bg-[#3D5A45]/10 px-4 py-2 text-sm font-semibold text-[#3D5A45] shadow-sm">
+                    <Star className="mr-2 h-4 w-4 fill-current" />
+                    {nativeRatingSummary ? `${nativeRatingSummary.score}/5` : 'No native reviews yet'}
+                    <span className="ml-2 text-xs font-medium text-[#3D5A45]/80">
+                      {nativeRatingSummary ? `(${nativeRatingSummary.count}) Verified Reviews` : 'Verified Reviews'}
+                    </span>
+                  </div>
+                </div>
+
+                {visibleAiSummary ? (
+                  <div className="mt-5 rounded-[1.5rem] border border-[#E4D6C0] bg-[#FFFDF8] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <div className="inline-flex items-center rounded-full bg-[#F3E3B7] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-[#7A5A19]">
+                        User Review Summary
+                      </div>
+                      <div className="inline-flex items-center gap-2 text-sm font-semibold text-[#4D5A50]">
+                        <ShieldCheck className="h-4 w-4 text-[#3D5A45]" />
+                        <span>{visibleAiSummarySourceLabel}</span>
+                      </div>
+                      {provider.review_summary && liveDetails?.ai_summary && (
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${visibleAiSummaryAccentClass}`}
+                        >
+                          Showing native summary first
+                        </span>
+                      )}
+                    </div>
+                    <p className="max-w-3xl text-[15px] leading-7 text-[#454541] sm:text-base">
+                      {visibleAiSummary}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-5 rounded-[1.5rem] border border-dashed border-[#DDCEB2] bg-[#FFFBF2] p-4 text-sm text-[#6E6A63]">
+                    We are still gathering enough review detail to show a short trust summary for this business.
+                  </div>
+                )}
+              </div>
+
+              <div className="pawfinder-fade-up-delay-2 mt-6 flex flex-wrap items-start gap-3 text-[#5D5B55]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#DED3C5] bg-[#F7F0E7] px-4 py-2 text-sm font-medium shadow-sm">
+                  <MapPin className="h-4 w-4 text-[#3D5A45]" />
+                  <span>{locationLabel}</span>
+                </div>
+                <div
+                  className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold shadow-sm ${
+                    isOpenNow === true
+                      ? 'border border-[#3D5A45]/15 bg-[#3D5A45]/10 text-[#3D5A45]'
+                      : isOpenNow === false
+                        ? 'border border-[#DCCFBF] bg-[#F4ECE2] text-[#6E6A63]'
+                        : 'border border-[#E6DCCE] bg-[#FBF7F1] text-[#9A948B]'
+                  }`}
+                >
+                  {isOpenNow === true ? 'Open now' : isOpenNow === false ? 'Closed now' : 'Opening hours unavailable'}
+                </div>
+              </div>
+
+              <div className="pawfinder-fade-up-delay-2 mt-8 grid gap-5 lg:grid-cols-2">
+                <div className="rounded-[1.75rem] border border-[#E5DBCF] bg-[#FFF8F2] p-5 shadow-[0_18px_40px_-34px_rgba(61,90,69,0.45)]">
+                  <h3 className="font-display text-lg font-bold uppercase tracking-[0.16em] text-[#5A5A52]">
+                    Service Categories
+                  </h3>
+                  <div className="mt-3">
+                    {isAnalysisPending ? (
+                      <div className="pawfinder-fade-up rounded-[1.35rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E2D5C8] border-t-[#3D5A45]" />
+                          <div className="text-sm font-medium text-[#4E514B]">{analysisLoadingLabel}</div>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <div className="h-4 w-28 animate-pulse rounded-full bg-[#E8DDD0]" />
+                          <div className="flex flex-wrap gap-2">
+                            <div className="h-8 w-24 animate-pulse rounded-full bg-[#E8DDD0]" />
+                            <div className="h-8 w-20 animate-pulse rounded-full bg-[#E8DDD0]" />
+                          </div>
+                        </div>
+                      </div>
+                    ) : displayedServiceCategories.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {displayedServiceCategories.map((service, index) => (
+                          <span
+                            key={service}
+                            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-transform duration-200 hover:-translate-y-0.5 ${
+                              service === categoryLabel
+                                ? 'border-[#3D5A45]/20 bg-[#3D5A45]/12 text-[#3D5A45]'
+                                : index === 0
+                                  ? 'border-[#DDD1C4] bg-[#FFFDF8] text-[#5F5A52]'
+                                  : 'border-[#E7DDD2] bg-[#F7F1EA] text-[#6E6A63]'
+                            }`}
+                          >
+                            {service}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-[1.35rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-5">
+                        <div className="text-sm font-medium text-[#585850]">
+                          Service categories could not be confirmed from the business website yet.
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#938E86]">
+                          We only show saved service categories after website analysis has finished.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[1.75rem] border border-[#E5DBCF] bg-[#FFF8F2] p-5 shadow-[0_18px_40px_-34px_rgba(61,90,69,0.45)]">
+                  <h3 className="font-display text-lg font-bold uppercase tracking-[0.16em] text-[#5A5A52]">
+                    Breeds Supported
+                  </h3>
+                  <div className="mt-3 space-y-4">
+                    {isAnalysisPending ? (
+                      <div className="pawfinder-fade-up rounded-[1.35rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-5">
+                        <div className="flex items-center gap-3">
+                          <div className="h-5 w-5 animate-spin rounded-full border-2 border-[#E2D5C8] border-t-[#3D5A45]" />
+                          <div className="text-sm font-medium text-[#4E514B]">{analysisLoadingLabel}</div>
+                        </div>
+                        <p className="mt-2 text-xs leading-5 text-[#938E86]">
+                          Breed and animal coverage will appear here once the current analysis finishes.
+                        </p>
+                        <div className="mt-4 space-y-3">
+                          <div className="h-4 w-32 animate-pulse rounded-full bg-[#E8DDD0]" />
+                          <div className="flex flex-wrap gap-2">
+                            <div className="h-8 w-28 animate-pulse rounded-full bg-[#E8DDD0]" />
+                            <div className="h-8 w-24 animate-pulse rounded-full bg-[#E8DDD0]" />
+                            <div className="h-8 w-20 animate-pulse rounded-full bg-[#E8DDD0]" />
+                          </div>
+                        </div>
+                      </div>
+                    ) : displayedBreedValues.length > 0 ||
+                      generalCoverageLabels.length > 0 ||
+                      supportedAnimalLabels.length > 0 ? (
+                      <div className="space-y-4">
+                        {displayedBreedValues.length > 0 &&
+                          (Object.entries(groupedBreeds) as Array<[string, string[]]>).map(([animal, breeds]) => (
+                            <div key={animal}>
+                              <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
+                                {animal === 'other' ? 'Specialised coverage' : `${animal} specialisms`}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {breeds.map((breed) => (
+                                  <span
+                                    key={breed}
+                                    className="rounded-full border border-[#E6C2B6] bg-[#F8E4DB] px-3 py-1.5 text-sm font-medium text-[#A55E48]"
+                                  >
+                                    {getBreedLabel(breed)}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+
+                        {generalCoverageLabels.length > 0 && (
+                          <div>
+                            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
+                              General coverage inferred
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              {breeds.map((breed) => (
+                              {generalCoverageLabels.map((label: string) => (
                                 <span
-                                  key={breed}
-                                  className="rounded-full bg-[#e07a5f]/10 px-3 py-1.5 text-sm font-medium text-[#c26046]"
+                                  key={label}
+                                  className="rounded-full border border-[#E7DDD2] bg-[#FFFDF8] px-3 py-1.5 text-sm font-medium text-[#6E6A63]"
                                 >
-                                  {getBreedLabel(breed)}
+                                  Generally treats: {label}
                                 </span>
                               ))}
                             </div>
                           </div>
-                        ))}
+                        )}
 
-                      {generalCoverageLabels.length > 0 && (
-                        <div>
-                          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500">
-                            General coverage inferred
+                        {supportedAnimalLabels.length > 0 && (
+                          <div>
+                            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
+                              Animals confirmed
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {supportedAnimalLabels.map((label: string) => (
+                                <span
+                                  key={label}
+                                  className="rounded-full border border-[#3D5A45]/18 bg-[#3D5A45]/10 px-3 py-1.5 text-sm font-medium text-[#3D5A45]"
+                                >
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            {generalCoverageLabels.map((label: string) => (
-                              <span
-                                key={label}
-                                className="rounded-full bg-stone-100 px-3 py-1.5 text-sm font-medium text-stone-600"
-                              >
-                                Generally treats: {label}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {supportedAnimalLabels.length > 0 && (
-                        <div>
-                          <div className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500">
-                            Animals confirmed
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {supportedAnimalLabels.map((label: string) => (
-                              <span
-                                key={label}
-                                className="rounded-full bg-[#829e8d]/10 px-3 py-1.5 text-sm font-medium text-[#6c8676]"
-                              >
-                                {label}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-stone-200 bg-white/70 px-4 py-5">
-                      <div className="text-sm font-medium text-stone-600">
-                        {getBreedStatusMessage(breedTagStatus)}
+                        )}
                       </div>
-                      <p className="mt-1 text-xs leading-5 text-stone-400">
-                        We only show breed categories after they have been saved to the database from website analysis.
-                      </p>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="rounded-[1.35rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-5">
+                        <div className="text-sm font-medium text-[#585850]">
+                          {getBreedStatusMessage(breedTagStatus)}
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-[#938E86]">
+                          We only show breed categories after they have been saved to the database from website analysis.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              <div className="pawfinder-fade-up-delay-3 mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
+                {callNumber && (
+                  <button
+                    onClick={() => setShowCallPopup(true)}
+                    className="pressable-soft rounded-full border border-[#3D5A45] bg-[#3D5A45] px-6 py-3 font-semibold text-white shadow-[0_14px_32px_-22px_rgba(61,90,69,0.85)] hover:bg-[#324A39]"
+                  >
+                    Call Business
+                  </button>
+                )}
+                {websiteUrl && (
+                  <a
+                    href={websiteUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="pressable-soft rounded-full border border-[#D8C4A6] bg-[#FFF8ED] px-6 py-3 text-center font-semibold text-[#6A5121] shadow-[0_14px_32px_-24px_rgba(122,90,25,0.65)] hover:bg-[#FFF1D7]"
+                  >
+                    Visit Website
+                  </a>
+                )}
+                {bookingUrl && (
+                  <a
+                    href={bookingUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="pressable-soft rounded-full border border-[#C97C5D]/20 bg-[#C97C5D] px-6 py-3 text-center font-semibold text-white shadow-[0_14px_32px_-24px_rgba(145,84,60,0.7)] hover:bg-[#B96E52]"
+                  >
+                    Book Online
+                  </a>
+                )}
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
-              {callNumber && (
-                <button onClick={() => setShowCallPopup(true)} className="rounded-full bg-[#829e8d] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#6c8676]">
-                  Call Business
-                </button>
-              )}
-              {websiteUrl && (
-                <a href={websiteUrl} target="_blank" rel="noreferrer" className="rounded-full bg-[#e07a5f] px-6 py-3 text-center font-semibold text-white transition-colors hover:bg-[#d06950]">
-                  Visit Website
-                </a>
-              )}
-              {bookingUrl && (
-                <a href={bookingUrl} target="_blank" rel="noreferrer" className="rounded-full bg-stone-800 px-6 py-3 text-center font-semibold text-white transition-colors hover:bg-stone-700">
-                  Book Online
-                </a>
-              )}
-            </div>
+            {canShowLivePreview ? (
+              <div className="pawfinder-fade-up-delay-2 w-full rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
+                <h3 className="font-display mb-4 flex items-center gap-2 text-lg font-bold text-[#344136]">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black text-[#7A5A19] shadow-sm">
+                    G
+                  </span>
+                  Trust Snapshot
+                </h3>
+                <div className="rounded-[1.5rem] border border-[#E4D4B0] bg-[linear-gradient(180deg,#FFF3D9_0%,#FFF9EC_100%)] px-4 py-5 shadow-[0_18px_34px_-28px_rgba(123,90,29,0.8)]">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8A6D1F]/80">
+                    Google Rating
+                  </div>
+                  <div className="mt-2 text-4xl font-black text-[#7A5A19]">{liveDetails?.rating || 'N/A'}</div>
+                  <p className="mt-1 text-sm font-semibold text-[#8a6d1f]/80">
+                    {typeof liveDetails?.user_ratings_total === 'number'
+                      ? `${liveDetails.user_ratings_total} reviews live from Google Places`
+                      : 'Live from Google Places'}
+                  </p>
+                </div>
+
+                {liveDetails?.photos && (
+                  <div className="mt-6 grid grid-cols-2 gap-2">
+                    {liveDetails.photos.slice(1, 5).map((photo: any, i: number) => (
+                      <div key={i} className="relative h-24 overflow-hidden rounded-lg sm:h-28 md:h-24">
+                        <ProviderImage
+                          photoReference={photo.photo_reference}
+                          alt={`${provider.name} gallery ${i + 1}`}
+                          sizes="(max-width: 768px) 50vw, 144px"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-6 rounded-[1.5rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4 text-sm leading-6 text-[#5D5A54]">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
+                    Profile Atmosphere
+                  </div>
+                  <p className="mt-2">
+                    PawFinder keeps live Google trust signals and saved breed and service analysis visually separate so pet owners can scan what is confirmed at a glance.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="pawfinder-fade-up-delay-2 flex w-full flex-col justify-center rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 text-left shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
+                <Info className="mb-4 h-11 w-11 text-[#A39484]" />
+                <h3 className="font-display mb-2 text-xl font-bold text-[#344136]">Unverified Profile</h3>
+                <p className="mb-4 text-sm leading-6 text-[#6E6A63]">
+                  This business hasn&apos;t verified their profile or uploaded photos yet.
+                </p>
+                <div className="rounded-[1.35rem] border border-[#E4D4B0] bg-[#FFF7E7] p-4 text-sm leading-6 text-[#6A5121]">
+                  The trust summary above still helps pet owners understand the latest review signals while profile verification is pending.
+                </div>
+                <Link
+                  href={`/business/dashboard?claim=${encodeURIComponent(provider.google_place_id || provider.id)}`}
+                  className="mt-5 inline-flex text-sm font-semibold text-[#3D5A45] hover:underline"
+                >
+                  Are you the owner? Claim this listing
+                </Link>
+              </div>
+            )}
           </div>
 
-          {/* Premium Live Google Data */}
-          {canShowLivePreview ? (
-            <div className="w-full rounded-xl border border-stone-100 bg-stone-50 p-5 sm:p-6 md:w-72">
-              {/* FIX 4: Clear Google Rating Distinction */}
-              <h3 className="font-bold text-stone-800 mb-4 flex items-center gap-2">
-                <span className="bg-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shadow-sm text-stone-600">G</span>
-                Google Rating
-              </h3>
-              <div className="text-4xl font-black text-stone-900 mb-2">{liveDetails?.rating || 'N/A'}</div>
-              <p className="text-sm text-stone-500 mb-6">Live from Google Places</p>
-              
-              {liveDetails?.photos && (
-                <div className="grid grid-cols-2 gap-2">
-                  {liveDetails.photos.slice(1, 5).map((photo: any, i: number) => (
-                    <div key={i} className="relative h-24 overflow-hidden rounded-lg sm:h-28 md:h-24">
-                      <ProviderImage
-                        photoReference={photo.photo_reference}
-                        alt={`${provider.name} gallery ${i + 1}`}
-                        sizes="(max-width: 768px) 50vw, 144px"
-                      />
+          {isFeaturedProfile && liveDetails?.reviews?.length > 0 && (
+            <div className="mt-8 rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFFDFC] p-5 shadow-[0_18px_40px_-34px_rgba(60,48,35,0.2)] sm:p-8">
+              <h2 className="font-display text-2xl font-bold text-[#344136]">Google Review Preview</h2>
+              <p className="mt-1 text-sm text-[#77736B]">
+                Showing up to 5 live Google reviews for the nearest result you opened from search.
+              </p>
+              <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                {liveDetails.reviews.slice(0, 5).map((review: any, index: number) => (
+                  <div
+                    key={`${review.author_name || 'review'}-${index}`}
+                    className="rounded-[1.5rem] border border-[#E7DDD1] bg-[#FBF7F1] p-5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="font-semibold text-[#2F312E]">{review.author_name || 'Google review'}</span>
+                        <div className="mt-1 text-xs uppercase tracking-wide text-[#938E86]">
+                          {review.relative_time_description || 'Recent'}
+                        </div>
+                      </div>
+                      <div className="collar-tag collar-tag-small text-sm font-semibold">
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
+                          G
+                        </span>
+                        <span>{review.rating ? `${review.rating}` : 'N/A'}</span>
+                        <span className="rounded-full bg-white/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7A5A19]">
+                          review
+                        </span>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex w-full flex-col items-center justify-center rounded-xl border border-stone-200 bg-stone-50 p-5 text-center sm:p-6 md:w-72">
-              <Info className="w-12 h-12 text-stone-400 mb-4" />
-              <h3 className="font-bold text-stone-800 mb-2">Unverified Profile</h3>
-              <p className="text-sm text-stone-500 mb-4">This business hasn't verified their profile or uploaded photos yet.</p>
-              <Link href={`/business/dashboard?claim=${encodeURIComponent(provider.google_place_id || provider.id)}`} className="text-[#829e8d] font-semibold text-sm hover:underline">
-                Are you the owner? Claim this listing
-              </Link>
+                    <p className="mt-4 text-sm leading-6 text-[#5D5A54]">{review.text}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
-        </div>
 
-        {isFeaturedProfile && liveDetails?.reviews?.length > 0 && (
-          <div className="mt-8 rounded-2xl border border-stone-100 bg-white p-5 shadow-sm sm:p-8">
-            <h2 className="text-2xl font-bold text-stone-900">Google Review Preview</h2>
-            <p className="mt-1 text-sm text-stone-500">Showing up to 5 live Google reviews for the nearest result you opened from search.</p>
-            <div className="mt-6 grid gap-4 lg:grid-cols-2">
-              {liveDetails.reviews.slice(0, 5).map((review: any, index: number) => (
-                <div key={`${review.author_name || 'review'}-${index}`} className="rounded-2xl border border-stone-100 bg-stone-50 p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <span className="font-semibold text-stone-800">{review.author_name || 'Google review'}</span>
-                      <div className="mt-1 text-xs uppercase tracking-wide text-stone-400">{review.relative_time_description || 'Recent'}</div>
-                    </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-stone-700 shadow-sm">
-                      {review.rating ? `${review.rating}/5` : 'No score'}
-                    </span>
-                  </div>
-                  <p className="mt-4 text-sm leading-6 text-stone-600">{review.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Native Reviews Section */}
+          {/* Native Reviews Section */}
         <div className="mt-12">
           <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -927,6 +1059,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             )}
           </div>
         </div>
+      </div>
       </div>
 
       {showCallPopup && callNumber && (

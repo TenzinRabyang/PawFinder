@@ -481,10 +481,14 @@ function SearchContent() {
                       
                       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                         {provider.google_rating ? (
-                          <div className="inline-flex items-center rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm font-semibold text-stone-700 shadow-sm">
-                            <Star className="mr-1.5 h-3.5 w-3.5 fill-current text-[#e07a5f]" />
-                            {provider.google_rating.score}
-                            <span className="ml-1.5 text-xs font-medium text-stone-500">({provider.google_rating.count})</span>
+                          <div className="collar-tag collar-tag-small text-sm font-semibold">
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
+                              G
+                            </span>
+                            <span>{provider.google_rating.score}</span>
+                            <span className="rounded-full bg-white/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7A5A19]">
+                              {provider.google_rating.count}
+                            </span>
                           </div>
                         ) : provider.native_rating ? (
                           <div className="inline-flex items-center rounded-full border border-[#829e8d]/20 bg-[#829e8d]/8 px-3 py-1.5 text-sm font-semibold text-[#6c8676] shadow-sm">
