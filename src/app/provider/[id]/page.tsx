@@ -151,6 +151,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const supportedAnimalLabels = supportedAnimals.map((animal: string) =>
     animal === 'dog' ? 'Dogs' : animal === 'cat' ? 'Cats' : animal === 'rabbit' ? 'Rabbits' : animal
   )
+  const showNoSpecificBreedNote =
+    displayedBreedValues.length === 0 &&
+    generalCoverageLabels.length > 0 &&
+    Boolean(provider?.photo_breed_analysis_exhausted)
   const visibleConfirmedServiceValues = removeCategoryDuplicateServices({
     category: provider?.category,
     services: provider?.services,
@@ -810,6 +814,17 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                                 </span>
                               ))}
                             </div>
+                          </div>
+                        )}
+
+                        {showNoSpecificBreedNote && (
+                          <div className="rounded-[1.1rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-3">
+                            <div className="text-sm font-medium text-[#585850]">
+                              Specific breed coverage could not be confirmed from the available photos.
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-[#938E86]">
+                              The general animal coverage above is saved, but no breed-specific support could be verified.
+                            </p>
                           </div>
                         )}
                       </div>

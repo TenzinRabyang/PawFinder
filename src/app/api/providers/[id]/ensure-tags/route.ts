@@ -486,6 +486,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   if (
+    provider &&
+    livePhotos.length > 0 &&
+    Boolean(provider.ai_tagged_at) &&
+    shouldAttemptPhotoBreedSupplement(provider)
+  ) {
+    const photoSupplementResult = await runPhotoBreedInference({
+      providerRecord: provider,
+      responseSource: 'generated',
+    })
+
+    if ('error' in photoSupplementResult) {
+      return NextResponse.json({ error: photoSupplementResult.error }, { status: 500 })
+    }
+
+    return NextResponse.json(photoSupplementResult)
+  }
+
+  if (
     hasSavedWebsiteAnalysis(analysisSourceProvider()) &&
     !shouldRefreshIncompleteBreedCoverage(analysisSourceProvider()) &&
     !(shouldAttemptPhotoBreedSupplement(analysisSourceProvider()) && livePhotos.length > 0)
