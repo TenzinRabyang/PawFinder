@@ -97,6 +97,50 @@ function mergeUniqueValues(...values: Array<string[] | null | undefined>) {
   )
 }
 
+function getPhotoInferenceErrorDetails(error: unknown): {
+  category: 'missing_api_key' | 'openai_non_200' | 'json_parse_failure' | 'unknown'
+  errorName: string
+  errorMessage: string
+  openAiStatusCode?: number
+  openAiResponseBody?: string
+} {
+  const errorName = error instanceof Error ? error.name : typeof error
+  const errorMessage = error instanceof Error ? error.message : String(error)
+
+  if (errorMessage.includes('Missing OPENAI_API_KEY')) {
+    return {
+      category: 'missing_api_key' as const,
+      errorName,
+      errorMessage,
+    }
+  }
+
+  const openAiStatusMatch = errorMessage.match(/^OpenAI photo classification failed \((\d{3})\):\s*([\s\S]*)$/)
+  if (openAiStatusMatch) {
+    return {
+      category: 'openai_non_200' as const,
+      errorName,
+      errorMessage,
+      openAiStatusCode: Number(openAiStatusMatch[1]),
+      openAiResponseBody: openAiStatusMatch[2],
+    }
+  }
+
+  if (error instanceof SyntaxError) {
+    return {
+      category: 'json_parse_failure' as const,
+      errorName,
+      errorMessage,
+    }
+  }
+
+  return {
+    category: 'unknown' as const,
+    errorName,
+    errorMessage,
+  }
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = (await request.json().catch(() => ({}))) as EnsureTagsBody
@@ -354,11 +398,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         },
       }
     } catch (error) {
+      const errorDetails = getPhotoInferenceErrorDetails(error)
+
       console.error('[photo-inference] provider photo analysis failed', {
         providerId: providerRecord.id,
         providerName,
         googlePlaceId: canonicalPlaceId,
-        error,
+        errorCategory: errorDetails.category,
+        errorName: errorDetails.errorName,
+        errorMessage: errorDetails.errorMessage,
+        openAiStatusCode: errorDetails.openAiStatusCode,
+        openAiResponseBody: errorDetails.openAiResponseBody,
+        errorStack: error instanceof Error ? error.stack : undefined,
         supplementingWebsiteAnalysis: usesWebsiteAnalysis,
       })
 
