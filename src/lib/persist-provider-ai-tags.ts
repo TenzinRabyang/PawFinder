@@ -1,27 +1,39 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 
 type ProviderAiTagPayload = {
-  website: string | null
-  animals_served: string[]
-  services: string[]
-  services_inferred_from_name: string[]
-  breeds_specialised: string[]
-  breeds_general_inferred: string[]
-  ai_tagged_at: string
-  ai_tagging_skipped_low_content: boolean
-  tagging_attempt_count: number
-  breed_analysis_exhausted: boolean
+  website?: string | null
+  animals_served?: string[]
+  services?: string[]
+  services_inferred_from_name?: string[]
+  breeds_specialised?: string[]
+  breeds_general_inferred?: string[]
+  ai_tagged_at?: string
+  ai_tagging_skipped_low_content?: boolean
+  tagging_attempt_count?: number
+  breed_analysis_exhausted?: boolean
+  photo_tagging_attempt_count?: number
+  photo_breed_analysis_exhausted?: boolean
   is_claimed?: boolean
-  has_online_booking: boolean
-  booking_url: string | null
-  booking_checked_at: string
+  has_online_booking?: boolean
+  booking_url?: string | null
+  booking_checked_at?: string
 }
 
-function isMissingInferredServicesColumnError(error: { code?: string; message?: string } | null | undefined) {
+function getMissingOptionalColumn(error: { code?: string; message?: string } | null | undefined) {
+  if (error?.code !== 'PGRST204' || typeof error.message !== 'string') {
+    return null
+  }
+
+  if (error.message.includes('services_inferred_from_name')) return 'services_inferred_from_name'
+  if (error.message.includes('photo_tagging_attempt_count')) return 'photo_tagging_attempt_count'
+  if (error.message.includes('photo_breed_analysis_exhausted')) return 'photo_breed_analysis_exhausted'
+
+  return null
+}
+
+function isMissingOptionalColumnError(error: { code?: string; message?: string } | null | undefined) {
   return (
-    error?.code === 'PGRST204' &&
-    typeof error.message === 'string' &&
-    error.message.includes('services_inferred_from_name')
+    getMissingOptionalColumn(error) !== null
   )
 }
 
@@ -30,34 +42,33 @@ export async function persistProviderAiTags(
   providerId: string,
   payload: ProviderAiTagPayload
 ) {
-  const updatePayload: Record<string, unknown> = {
-    website: payload.website,
-    animals_served: payload.animals_served,
-    services: payload.services,
-    services_inferred_from_name: payload.services_inferred_from_name,
-    breeds_specialised: payload.breeds_specialised,
-    breeds_general_inferred: payload.breeds_general_inferred,
-    ai_tagged_at: payload.ai_tagged_at,
-    ai_tagging_skipped_low_content: payload.ai_tagging_skipped_low_content,
-    tagging_attempt_count: payload.tagging_attempt_count,
-    breed_analysis_exhausted: payload.breed_analysis_exhausted,
-    is_claimed: payload.is_claimed,
-    has_online_booking: payload.has_online_booking,
-    booking_url: payload.booking_url,
-    booking_checked_at: payload.booking_checked_at,
+  const updatePayload: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (typeof value !== 'undefined') {
+      updatePayload[key] = value
+    }
   }
 
-  if (typeof payload.is_claimed === 'undefined') {
-    delete updatePayload.is_claimed
+  if (Object.keys(updatePayload).length === 0) {
+    return { error: null }
   }
 
-  const { error } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId)
+  let { error } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId)
 
-  if (!isMissingInferredServicesColumnError(error)) {
+  if (!isMissingOptionalColumnError(error)) {
     return { error }
   }
 
-  delete updatePayload.services_inferred_from_name
-  const { error: retryError } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId)
-  return { error: retryError }
+  while (isMissingOptionalColumnError(error)) {
+    const missingColumn = getMissingOptionalColumn(error)
+    if (!missingColumn) {
+      break
+    }
+
+    delete updatePayload[missingColumn]
+    ;({ error } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId))
+  }
+
+  return { error }
 }

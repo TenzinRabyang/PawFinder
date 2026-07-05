@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS pf_providers (
     ai_tagging_skipped_low_content BOOLEAN DEFAULT false,
     tagging_attempt_count INTEGER DEFAULT 0,
     breed_analysis_exhausted BOOLEAN DEFAULT false,
+    photo_tagging_attempt_count INTEGER DEFAULT 0,
+    photo_breed_analysis_exhausted BOOLEAN DEFAULT false,
     place_id_refresh_attempt_count INTEGER DEFAULT 0,
     place_id_refresh_exhausted BOOLEAN DEFAULT false,
     review_summary TEXT,
@@ -93,6 +95,12 @@ ALTER TABLE pf_providers
 
 ALTER TABLE pf_providers
     ADD COLUMN IF NOT EXISTS breed_analysis_exhausted BOOLEAN DEFAULT false;
+
+ALTER TABLE pf_providers
+    ADD COLUMN IF NOT EXISTS photo_tagging_attempt_count INTEGER DEFAULT 0;
+
+ALTER TABLE pf_providers
+    ADD COLUMN IF NOT EXISTS photo_breed_analysis_exhausted BOOLEAN DEFAULT false;
 
 ALTER TABLE pf_providers
     ADD COLUMN IF NOT EXISTS place_id_refresh_attempt_count INTEGER DEFAULT 0;

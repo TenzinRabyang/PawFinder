@@ -10,10 +10,13 @@ import {
 } from '@/lib/provider-name-service-inference'
 import {
   hasAnalysisAttemptsRemaining,
+  hasPhotoAnalysisAttemptsRemaining,
   getBreedAnalysisPersistence,
+  getPhotoBreedAnalysisPersistence,
   getBreedAnalysisStatus,
   hasMeaningfulBreedAnalysis,
   shouldAutoRetryBreedAnalysis,
+  shouldAttemptPhotoBreedSupplement,
   shouldRefreshIncompleteBreedCoverage,
 } from '@/lib/provider-analysis-state'
 import { resolvePlaceDetailsWithAutoHeal } from '@/lib/provider-place-id-recovery'
@@ -81,7 +84,17 @@ function buildEphemeralProvider(id: string, body: EnsureTagsBody) {
     ai_tagging_skipped_low_content: false,
     tagging_attempt_count: 0,
     breed_analysis_exhausted: false,
+    photo_tagging_attempt_count: 0,
+    photo_breed_analysis_exhausted: false,
   }
+}
+
+function mergeUniqueValues(...values: Array<string[] | null | undefined>) {
+  return Array.from(
+    new Set(
+      values.flatMap((value) => (Array.isArray(value) ? value : [])).filter((value): value is string => Boolean(value))
+    )
+  )
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -199,6 +212,209 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const providerName = providerSeed.name || provider?.name || ephemeralProvider.name
   const providerCategory = provider?.category || ephemeralProvider.category
   const websiteToAnalyze = providerSeed.website || provider?.website || ephemeralProvider.website
+  const livePhotos = Array.isArray(livePlaceResult.photos) ? livePlaceResult.photos : []
+
+  const runPhotoBreedInference = async ({
+    providerRecord,
+    servicesInferredFromName,
+    responseSource,
+  }: {
+    providerRecord: typeof provider
+    servicesInferredFromName?: string[]
+    responseSource: 'generated' | 'database'
+  }) => {
+    const usesWebsiteAnalysis = Boolean(providerRecord?.website?.trim())
+    const attemptsRemaining = usesWebsiteAnalysis
+      ? hasPhotoAnalysisAttemptsRemaining(providerRecord || {})
+      : hasAnalysisAttemptsRemaining(providerRecord || {})
+
+    if (!providerRecord || livePhotos.length === 0 || !attemptsRemaining) {
+      return {
+        provider: providerRecord,
+        source: responseSource,
+        analysis_status: providerRecord ? getBreedAnalysisStatus(providerRecord) : 'no_website',
+      }
+    }
+
+    const attemptNumber = usesWebsiteAnalysis
+      ? (providerRecord.photo_tagging_attempt_count || 0) + 1
+      : (providerRecord.tagging_attempt_count || 0) + 1
+
+    try {
+      console.info('[photo-inference] running provider photo analysis', {
+        providerId: providerRecord.id,
+        providerName,
+        googlePlaceId: canonicalPlaceId,
+        availablePhotoCount: livePhotos.length,
+        photoLimit: 3,
+        attemptNumber,
+        supplementingWebsiteAnalysis: usesWebsiteAnalysis,
+      })
+
+      const photoInference = await inferAnimalsFromProviderPhotos({
+        providerName,
+        photos: livePhotos,
+        googleApiKey,
+      })
+      const analyzedAt = new Date().toISOString()
+      const mergedBreedsSpecialised = mergeUniqueValues(
+        providerRecord.breeds_specialised,
+        photoInference.breeds_specialised
+      )
+      const mergedGeneralCoverage = mergeUniqueValues(
+        providerRecord.breeds_general_inferred,
+        photoInference.breeds_general_inferred
+      )
+
+      const { error: baseUpdateError } = await supabaseAdmin
+        .from('pf_providers')
+        .update({
+          google_place_id: canonicalPlaceId,
+          name: providerName || providerRecord.name,
+          address: providerSeed.address || providerRecord.address,
+          phone: providerSeed.phone || providerRecord.phone,
+        })
+        .eq('id', providerRecord.id)
+
+      if (baseUpdateError) {
+        return { error: baseUpdateError.message }
+      }
+
+      let attemptFields: Record<string, number | boolean>
+      let exhausted = false
+
+      if (usesWebsiteAnalysis) {
+        const photoPersistence = getPhotoBreedAnalysisPersistence(providerRecord || {}, {
+          breeds_specialised: mergedBreedsSpecialised,
+        })
+        attemptFields = {
+          photo_tagging_attempt_count: photoPersistence.photoTaggingAttemptCount,
+          photo_breed_analysis_exhausted: photoPersistence.photoBreedAnalysisExhausted,
+        }
+        exhausted = photoPersistence.photoBreedAnalysisExhausted
+      } else {
+        const standardPersistence = getBreedAnalysisPersistence(providerRecord || {}, {
+          animals_served: providerRecord?.animals_served || [],
+          services: providerRecord?.services || [],
+          breeds_specialised: mergedBreedsSpecialised,
+          breeds_general_inferred: mergedGeneralCoverage,
+        })
+        attemptFields = {
+          tagging_attempt_count: standardPersistence.taggingAttemptCount,
+          breed_analysis_exhausted: standardPersistence.breedAnalysisExhausted,
+        }
+        exhausted = standardPersistence.breedAnalysisExhausted
+      }
+
+      const { error: tagUpdateError } = await persistProviderAiTags(supabaseAdmin, providerRecord.id, {
+        services_inferred_from_name: servicesInferredFromName,
+        breeds_specialised: mergedBreedsSpecialised,
+        breeds_general_inferred: mergedGeneralCoverage,
+        ai_tagged_at: analyzedAt,
+        ai_tagging_skipped_low_content: false,
+        ...attemptFields,
+      })
+
+      if (tagUpdateError) {
+        return { error: tagUpdateError.message }
+      }
+
+      const { data: refreshedProvider, error: refreshedProviderError } = await supabaseAdmin
+        .from('pf_providers')
+        .select('*')
+        .eq('id', providerRecord.id)
+        .single()
+
+      if (refreshedProviderError) {
+        return { error: refreshedProviderError.message }
+      }
+
+      console.info('[photo-inference] provider photo analysis completed', {
+        providerId: providerRecord.id,
+        providerName,
+        googlePlaceId: canonicalPlaceId,
+        availablePhotoCount: livePhotos.length,
+        analyzedPhotoCount: photoInference.analyzed_photo_count,
+        inferredAnimals: photoInference.breeds_general_inferred,
+        inferredBreeds: photoInference.breeds_specialised,
+        attemptNumber,
+        exhausted,
+        model: photoInference.model,
+      })
+
+      return {
+        provider: refreshedProvider,
+        source: responseSource,
+        analysis_status: getBreedAnalysisStatus(refreshedProvider),
+        photo_analysis: {
+          available_photo_count: photoInference.available_photo_count,
+          analyzed_photo_count: photoInference.analyzed_photo_count,
+          model: photoInference.model,
+          breed_source: photoInference.breed_source,
+        },
+      }
+    } catch (error) {
+      console.error('[photo-inference] provider photo analysis failed', {
+        providerId: providerRecord.id,
+        providerName,
+        googlePlaceId: canonicalPlaceId,
+        error,
+        supplementingWebsiteAnalysis: usesWebsiteAnalysis,
+      })
+
+      const analyzedAt = new Date().toISOString()
+      let attemptFields: Record<string, number | boolean>
+
+      if (usesWebsiteAnalysis) {
+        const photoPersistence = getPhotoBreedAnalysisPersistence(providerRecord || {}, {
+          breeds_specialised: providerRecord?.breeds_specialised || [],
+        })
+        attemptFields = {
+          photo_tagging_attempt_count: photoPersistence.photoTaggingAttemptCount,
+          photo_breed_analysis_exhausted: photoPersistence.photoBreedAnalysisExhausted,
+        }
+      } else {
+        const standardPersistence = getBreedAnalysisPersistence(providerRecord || {}, {
+          animals_served: providerRecord?.animals_served || [],
+          services: providerRecord?.services || [],
+          breeds_specialised: providerRecord?.breeds_specialised || [],
+          breeds_general_inferred: providerRecord?.breeds_general_inferred || [],
+        })
+        attemptFields = {
+          tagging_attempt_count: standardPersistence.taggingAttemptCount,
+          breed_analysis_exhausted: standardPersistence.breedAnalysisExhausted,
+        }
+      }
+
+      const { error: tagUpdateError } = await persistProviderAiTags(supabaseAdmin, providerRecord.id, {
+        services_inferred_from_name: servicesInferredFromName,
+        ai_tagged_at: analyzedAt,
+        ai_tagging_skipped_low_content: false,
+        ...attemptFields,
+      })
+
+      if (tagUpdateError) {
+        return { error: tagUpdateError.message }
+      }
+
+      const { data: refreshedProvider, error: refreshedProviderError } = await supabaseAdmin
+        .from('pf_providers')
+        .select('*')
+        .eq('id', providerRecord.id)
+        .single()
+
+      if (refreshedProviderError) {
+        return { error: refreshedProviderError.message }
+      }
+
+      return {
+        provider: refreshedProvider,
+        source: responseSource,
+        analysis_status: getBreedAnalysisStatus(refreshedProvider),
+        analysis_error_reason: 'photo_analysis_failed',
+      }
+    }
+  }
 
   if (!websiteToAnalyze) {
     const inferredServicesFromName = inferServicesFromBusinessName({
@@ -206,8 +422,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       category: providerCategory,
       confirmedServices: provider?.services || [],
     })
-    const livePhotos = Array.isArray(livePlaceResult.photos) ? livePlaceResult.photos : []
-
     if (provider) {
       const { data: updatedWithoutWebsite, error: noWebsiteUpdateError } = await supabaseAdmin
         .from('pf_providers')
@@ -248,148 +462,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         })
       }
 
-      try {
-        console.info('[photo-inference] running provider photo analysis', {
-          providerId: providerWithoutWebsite.id,
-          providerName,
-          googlePlaceId: canonicalPlaceId,
-          availablePhotoCount: livePhotos.length,
-          photoLimit: 3,
-          attemptNumber: (providerWithoutWebsite.tagging_attempt_count || 0) + 1,
-        })
+      const photoResult = await runPhotoBreedInference({
+        providerRecord: providerWithoutWebsite,
+        servicesInferredFromName: inferredServicesFromName,
+        responseSource: 'generated',
+      })
 
-        const photoInference = await inferAnimalsFromProviderPhotos({
-          providerName,
-          photos: livePhotos,
-          googleApiKey,
-        })
-        const analyzedAt = new Date().toISOString()
-        const persistence = getBreedAnalysisPersistence(providerWithoutWebsite, {
-          animals_served: providerWithoutWebsite.animals_served || [],
-          services: providerWithoutWebsite.services || [],
-          breeds_specialised: providerWithoutWebsite.breeds_specialised || [],
-          breeds_general_inferred: photoInference.breeds_general_inferred,
-        })
-
-        const { data: photoAnalyzedProvider, error: photoUpdateError } = await supabaseAdmin
-          .from('pf_providers')
-          .update({
-            google_place_id: canonicalPlaceId,
-            name: providerName || providerWithoutWebsite.name,
-            address: providerSeed.address || providerWithoutWebsite.address,
-            phone: providerSeed.phone || providerWithoutWebsite.phone,
-            services_inferred_from_name: inferredServicesFromName,
-            breeds_general_inferred: photoInference.breeds_general_inferred,
-            ai_tagged_at: analyzedAt,
-            tagging_attempt_count: persistence.taggingAttemptCount,
-            breed_analysis_exhausted: persistence.breedAnalysisExhausted,
-            ai_tagging_skipped_low_content: false,
-          })
-          .eq('id', providerWithoutWebsite.id)
-          .select('*')
-          .single()
-
-        if (photoUpdateError && !isMissingInferredServicesColumnError(photoUpdateError)) {
-          return NextResponse.json({ error: photoUpdateError.message }, { status: 500 })
-        }
-
-        const nextProvider = photoAnalyzedProvider
-          ? photoAnalyzedProvider
-          : {
-              ...providerWithoutWebsite,
-              google_place_id: canonicalPlaceId,
-              name: providerName || providerWithoutWebsite.name,
-              address: providerSeed.address || providerWithoutWebsite.address,
-              phone: providerSeed.phone || providerWithoutWebsite.phone,
-              services_inferred_from_name: inferredServicesFromName,
-              breeds_general_inferred: photoInference.breeds_general_inferred,
-              ai_tagged_at: analyzedAt,
-              tagging_attempt_count: persistence.taggingAttemptCount,
-              breed_analysis_exhausted: persistence.breedAnalysisExhausted,
-              ai_tagging_skipped_low_content: false,
-            }
-
-        console.info('[photo-inference] provider photo analysis completed', {
-          providerId: providerWithoutWebsite.id,
-          providerName,
-          googlePlaceId: canonicalPlaceId,
-          availablePhotoCount: livePhotos.length,
-          analyzedPhotoCount: photoInference.analyzed_photo_count,
-          inferredAnimals: photoInference.breeds_general_inferred,
-          attemptNumber: persistence.taggingAttemptCount,
-          exhausted: persistence.breedAnalysisExhausted,
-          model: photoInference.model,
-        })
-
-        return NextResponse.json({
-          provider: nextProvider,
-          source: 'generated',
-          analysis_status: getBreedAnalysisStatus(nextProvider),
-          photo_analysis: {
-            available_photo_count: photoInference.available_photo_count,
-            analyzed_photo_count: photoInference.analyzed_photo_count,
-            model: photoInference.model,
-          },
-        })
-      } catch (error) {
-        console.error('[photo-inference] provider photo analysis failed', {
-          providerId: providerWithoutWebsite.id,
-          providerName,
-          googlePlaceId: canonicalPlaceId,
-          error,
-        })
-
-        const analyzedAt = new Date().toISOString()
-        const persistence = getBreedAnalysisPersistence(providerWithoutWebsite, {
-          animals_served: providerWithoutWebsite.animals_served || [],
-          services: providerWithoutWebsite.services || [],
-          breeds_specialised: providerWithoutWebsite.breeds_specialised || [],
-          breeds_general_inferred: [],
-        })
-
-        const { data: failedPhotoProvider, error: failedPhotoUpdateError } = await supabaseAdmin
-          .from('pf_providers')
-          .update({
-            google_place_id: canonicalPlaceId,
-            name: providerName || providerWithoutWebsite.name,
-            address: providerSeed.address || providerWithoutWebsite.address,
-            phone: providerSeed.phone || providerWithoutWebsite.phone,
-            services_inferred_from_name: inferredServicesFromName,
-            ai_tagged_at: analyzedAt,
-            tagging_attempt_count: persistence.taggingAttemptCount,
-            breed_analysis_exhausted: persistence.breedAnalysisExhausted,
-            ai_tagging_skipped_low_content: false,
-          })
-          .eq('id', providerWithoutWebsite.id)
-          .select('*')
-          .single()
-
-        if (failedPhotoUpdateError && !isMissingInferredServicesColumnError(failedPhotoUpdateError)) {
-          return NextResponse.json({ error: failedPhotoUpdateError.message }, { status: 500 })
-        }
-
-        const nextProvider = failedPhotoProvider
-          ? failedPhotoProvider
-          : {
-              ...providerWithoutWebsite,
-              google_place_id: canonicalPlaceId,
-              name: providerName || providerWithoutWebsite.name,
-              address: providerSeed.address || providerWithoutWebsite.address,
-              phone: providerSeed.phone || providerWithoutWebsite.phone,
-              services_inferred_from_name: inferredServicesFromName,
-              ai_tagged_at: analyzedAt,
-              tagging_attempt_count: persistence.taggingAttemptCount,
-              breed_analysis_exhausted: persistence.breedAnalysisExhausted,
-              ai_tagging_skipped_low_content: false,
-            }
-
-        return NextResponse.json({
-          provider: nextProvider,
-          source: 'generated',
-          analysis_status: getBreedAnalysisStatus(nextProvider),
-          analysis_error_reason: 'photo_analysis_failed',
-        })
+      if ('error' in photoResult) {
+        return NextResponse.json({ error: photoResult.error }, { status: 500 })
       }
+
+      return NextResponse.json(photoResult)
     }
 
     return NextResponse.json({
@@ -404,7 +487,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (
     hasSavedWebsiteAnalysis(analysisSourceProvider()) &&
-    !shouldRefreshIncompleteBreedCoverage(analysisSourceProvider())
+    !shouldRefreshIncompleteBreedCoverage(analysisSourceProvider()) &&
+    !(shouldAttemptPhotoBreedSupplement(analysisSourceProvider()) && livePhotos.length > 0)
   ) {
     return NextResponse.json({
       provider: analysisSourceProvider(),
@@ -415,7 +499,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   if (
     !shouldAutoRetryBreedAnalysis(analysisSourceProvider()) &&
-    !shouldRefreshIncompleteBreedCoverage(analysisSourceProvider())
+    !shouldRefreshIncompleteBreedCoverage(analysisSourceProvider()) &&
+    !(shouldAttemptPhotoBreedSupplement(analysisSourceProvider()) && livePhotos.length > 0)
   ) {
     return NextResponse.json({
       provider: analysisSourceProvider(),
@@ -545,6 +630,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     if (refreshedError) {
       return NextResponse.json({ error: refreshedError.message }, { status: 500 })
+    }
+
+    if (
+      (!Array.isArray(updated.breeds_specialised) || updated.breeds_specialised.length === 0) &&
+      livePhotos.length > 0 &&
+      shouldAttemptPhotoBreedSupplement(updated)
+    ) {
+      const photoSupplementResult = await runPhotoBreedInference({
+        providerRecord: updated,
+        responseSource: 'generated',
+      })
+
+      if ('error' in photoSupplementResult) {
+        return NextResponse.json({ error: photoSupplementResult.error }, { status: 500 })
+      }
+
+      return NextResponse.json({
+        ...photoSupplementResult,
+        pages_analysed: pagesAnalysed,
+        pages_attempted: pagesAttempted,
+        pages_fetched: pagesFetched,
+        ai_tagging_skipped_low_content: skippedLowContent,
+        booking_detection_source: bookingAnalysis.detectionSource,
+      })
     }
 
     return NextResponse.json({

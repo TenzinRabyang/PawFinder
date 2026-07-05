@@ -12,6 +12,7 @@ import {
   getBreedAnalysisStatus,
   hasAnalysisAttemptsRemaining,
   hasMeaningfulBreedAnalysis,
+  shouldAttemptPhotoBreedSupplement,
   shouldAutoRetryBreedAnalysis,
   shouldRefreshIncompleteBreedCoverage,
 } from '@/lib/provider-analysis-state'
@@ -360,6 +361,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             booking_checked_at: null,
             tagging_attempt_count: 0,
             breed_analysis_exhausted: false,
+            photo_tagging_attempt_count: 0,
+            photo_breed_analysis_exhausted: false,
             ai_tagging_skipped_low_content: false,
             is_claimed: false,
           }
@@ -375,8 +378,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         hasGooglePhotos &&
         !hasMeaningfulBreedAnalysis(resolvedProvider) &&
         hasAnalysisAttemptsRemaining(resolvedProvider)
+      const shouldSupplementPhotoBreeds =
+        Boolean(providerWebsite) &&
+        hasGooglePhotos &&
+        shouldAttemptPhotoBreedSupplement(resolvedProvider)
 
-      if (!shouldRetryAnalysis && !shouldRefreshBreedCoverage && !shouldRetryPhotoAnalysis && !shouldAnalyzeFreshWebsite) {
+      if (
+        !shouldRetryAnalysis &&
+        !shouldRefreshBreedCoverage &&
+        !shouldRetryPhotoAnalysis &&
+        !shouldAnalyzeFreshWebsite &&
+        !shouldSupplementPhotoBreeds
+      ) {
         setBreedTagStatus(currentAnalysisStatus)
       } else if (providerWebsite) {
         void refreshSavedProviderAnalysis(canonicalPlaceId, resolvedProvider, providerWebsite, data)
@@ -806,7 +819,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                           {getBreedStatusMessage(breedTagStatus)}
                         </div>
                         <p className="mt-1 text-xs leading-5 text-[#938E86]">
-                          We only show breed categories after they have been saved to the database from website analysis.
+                          Breed tags appear here after they have been confirmed and saved from automatic analysis.
                         </p>
                       </div>
                     )}

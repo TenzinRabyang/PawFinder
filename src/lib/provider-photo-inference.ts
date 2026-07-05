@@ -1,4 +1,9 @@
-import { normalizeGeneralAnimalCoverage } from '@/lib/breed-taxonomy'
+import {
+  BREED_VALUES_BY_ANIMAL,
+  getAnimalForBreed,
+  normalizeBreedValues,
+  normalizeGeneralAnimalCoverage,
+} from '@/lib/breed-taxonomy'
 
 export const MAX_PROVIDER_PHOTO_ANALYSIS_PHOTOS = 3
 
@@ -17,28 +22,72 @@ type PhotoWithReference = {
 type PhotoInferenceResponse = {
   animals_present?: unknown
   breeds_general_inferred?: unknown
+  breeds_specialised?: unknown
   has_visible_animals?: unknown
+  breed_source?: unknown
 }
 
 export type ProviderPhotoInferenceResult = {
   breeds_general_inferred: string[]
+  breeds_specialised: string[]
   analyzed_photo_count: number
   available_photo_count: number
   model: string
+  breed_source: 'photo'
 }
 
 function buildPhotoPrompt(providerName: string) {
+  const supportedDogBreeds = BREED_VALUES_BY_ANIMAL.dog.join(', ')
+  const supportedCatBreeds = BREED_VALUES_BY_ANIMAL.cat.join(', ')
+  const supportedRabbitBreeds = BREED_VALUES_BY_ANIMAL.rabbit.join(', ')
+
   return [
     `You are classifying Google business photos for "${providerName}".`,
     'Return JSON only in this shape:',
-    '{"animals_present":["dog","cat"],"has_visible_animals":true}',
+    '{"animals_present":["dog","cat"],"breeds_general_inferred":["dog","cat"],"breeds_specialised":["labrador retriever"],"has_visible_animals":true,"breed_source":"photo"}',
     'Rules:',
     '- Only allowed animals: dog, cat, rabbit.',
     '- Only include an animal if it is clearly visible in at least one photo.',
-    '- Do not guess breed or species detail beyond dog, cat, rabbit.',
+    '- If a clearly visible animal has a visually identifiable breed, add the best-guess breed to "breeds_specialised".',
+    '- Leave "breeds_specialised" empty when the breed is unclear, obscured, mixed, too distant, or too uncertain.',
+    '- Only use breed values from the supported taxonomy lists below.',
+    '- Set "breed_source" to "photo" whenever you return breed guesses.',
     '- Ignore humans, tools, interiors, logos, text, and grooming equipment.',
-    '- If no animal is clearly visible, return {"animals_present":[],"has_visible_animals":false}.',
+    '- If no animal is clearly visible, return {"animals_present":[],"breeds_general_inferred":[],"breeds_specialised":[],"has_visible_animals":false,"breed_source":"photo"}.',
+    `- Dog breeds: ${supportedDogBreeds}`,
+    `- Cat breeds: ${supportedCatBreeds}`,
+    `- Rabbit breeds: ${supportedRabbitBreeds}`,
   ].join('\n')
+}
+
+type PhotoClassificationResult = {
+  breeds_general_inferred: string[]
+  breeds_specialised: string[]
+  breed_source: 'photo'
+}
+
+function mergeAnimalCoverage({
+  animalsPresent,
+  generalCoverage,
+  breeds,
+}: {
+  animalsPresent: unknown
+  generalCoverage: unknown
+  breeds: string[]
+}) {
+  const coverage = new Set<string>([
+    ...normalizeGeneralAnimalCoverage(animalsPresent),
+    ...normalizeGeneralAnimalCoverage(generalCoverage),
+  ])
+
+  for (const breed of breeds) {
+    const animal = getAnimalForBreed(breed)
+    if (animal) {
+      coverage.add(animal)
+    }
+  }
+
+  return Array.from(coverage)
 }
 
 function getMimeType(response: Response) {
@@ -71,11 +120,18 @@ async function fetchPhotoAsDataUrl(photoReference: string, googleApiKey: string)
   return `data:${mimeType};base64,${base64}`
 }
 
-async function requestOpenAiPhotoClassification(providerName: string, imageUrls: string[]) {
+async function requestOpenAiPhotoClassification(
+  providerName: string,
+  imageUrls: string[]
+): Promise<PhotoClassificationResult> {
   const key = process.env.OPENAI_API_KEY
 
   if (imageUrls.length === 0) {
-    return []
+    return {
+      breeds_general_inferred: [],
+      breeds_specialised: [],
+      breed_source: 'photo',
+    }
   }
 
   if (!key) {
@@ -121,8 +177,17 @@ async function requestOpenAiPhotoClassification(providerName: string, imageUrls:
   const data = JSON.parse(rawBody)
   const content = data?.choices?.[0]?.message?.content
   const parsed = JSON.parse(content || '{}') as PhotoInferenceResponse
+  const breedsSpecialised = normalizeBreedValues(parsed.breeds_specialised)
 
-  return normalizeGeneralAnimalCoverage(parsed.animals_present || parsed.breeds_general_inferred || [])
+  return {
+    breeds_general_inferred: mergeAnimalCoverage({
+      animalsPresent: parsed.animals_present,
+      generalCoverage: parsed.breeds_general_inferred,
+      breeds: breedsSpecialised,
+    }),
+    breeds_specialised: breedsSpecialised,
+    breed_source: parsed.breed_source === 'photo' ? 'photo' : 'photo',
+  }
 }
 
 async function classifyAcrossPhotos(providerName: string, imageUrls: string[]) {
@@ -136,15 +201,19 @@ async function classifyAcrossPhotos(providerName: string, imageUrls: string[]) {
     })
 
     const aggregatedAnimals = new Set<string>()
+    const aggregatedBreeds = new Set<string>()
     let successfulSinglePhotoClassification = false
     let lastSingleError: unknown = combinedError
 
     for (const imageUrl of imageUrls) {
       try {
-        const animals = await requestOpenAiPhotoClassification(providerName, [imageUrl])
+        const result = await requestOpenAiPhotoClassification(providerName, [imageUrl])
         successfulSinglePhotoClassification = true
-        for (const animal of animals) {
+        for (const animal of result.breeds_general_inferred) {
           aggregatedAnimals.add(animal)
+        }
+        for (const breed of result.breeds_specialised) {
+          aggregatedBreeds.add(breed)
         }
       } catch (singleError) {
         lastSingleError = singleError
@@ -161,7 +230,11 @@ async function classifyAcrossPhotos(providerName: string, imageUrls: string[]) {
         : new Error(typeof lastSingleError === 'string' ? lastSingleError : 'OpenAI photo classification failed'))
     }
 
-    return Array.from(aggregatedAnimals)
+    return {
+      breeds_general_inferred: Array.from(aggregatedAnimals),
+      breeds_specialised: Array.from(aggregatedBreeds),
+      breed_source: 'photo' as const,
+    }
   }
 }
 
@@ -192,12 +265,20 @@ export async function inferAnimalsFromProviderPhotos({
   }
 
   const breeds_general_inferred =
-    imageUrls.length > 0 ? await classifyAcrossPhotos(providerName, imageUrls) : []
+    imageUrls.length > 0
+      ? await classifyAcrossPhotos(providerName, imageUrls)
+      : {
+          breeds_general_inferred: [],
+          breeds_specialised: [],
+          breed_source: 'photo' as const,
+        }
 
   return {
-    breeds_general_inferred,
+    breeds_general_inferred: breeds_general_inferred.breeds_general_inferred,
+    breeds_specialised: breeds_general_inferred.breeds_specialised,
     analyzed_photo_count: imageUrls.length,
     available_photo_count: selectedPhotos.length,
     model: PHOTO_ANALYSIS_MODEL,
+    breed_source: breeds_general_inferred.breed_source,
   }
 }

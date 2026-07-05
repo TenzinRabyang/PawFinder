@@ -9,6 +9,8 @@ type AnalysisFields = {
   breeds_general_inferred?: string[] | null
   tagging_attempt_count?: number | null
   breed_analysis_exhausted?: boolean | null
+  photo_tagging_attempt_count?: number | null
+  photo_breed_analysis_exhausted?: boolean | null
   website?: string | null
 }
 
@@ -63,6 +65,12 @@ export function getTaggingAttemptCount(provider: AnalysisFields) {
     : 0
 }
 
+export function getPhotoTaggingAttemptCount(provider: AnalysisFields) {
+  return typeof provider.photo_tagging_attempt_count === 'number' && Number.isFinite(provider.photo_tagging_attempt_count)
+    ? provider.photo_tagging_attempt_count
+    : 0
+}
+
 export function hasAnalysisAttemptsRemaining(provider: AnalysisFields) {
   if (provider.breed_analysis_exhausted) {
     return false
@@ -71,8 +79,20 @@ export function hasAnalysisAttemptsRemaining(provider: AnalysisFields) {
   return getTaggingAttemptCount(provider) < MAX_AUTO_TAGGING_ATTEMPTS
 }
 
+export function hasPhotoAnalysisAttemptsRemaining(provider: AnalysisFields) {
+  if (provider.photo_breed_analysis_exhausted) {
+    return false
+  }
+
+  return getPhotoTaggingAttemptCount(provider) < MAX_AUTO_TAGGING_ATTEMPTS
+}
+
 export function getNextTaggingAttemptCount(provider: AnalysisFields) {
   return getTaggingAttemptCount(provider) + 1
+}
+
+export function getNextPhotoTaggingAttemptCount(provider: AnalysisFields) {
+  return getPhotoTaggingAttemptCount(provider) + 1
 }
 
 export function shouldAutoRetryBreedAnalysis(provider: AnalysisFields) {
@@ -98,6 +118,15 @@ export function shouldRefreshIncompleteBreedCoverage(provider: AnalysisFields) {
     !hasSavedBreedCoverage(provider) &&
     getTaggingAttemptCount(provider) === 0 &&
     hasAnalysisAttemptsRemaining(provider)
+  )
+}
+
+export function shouldAttemptPhotoBreedSupplement(provider: AnalysisFields) {
+  return (
+    Boolean(provider.website?.trim()) &&
+    Boolean(provider.ai_tagged_at) &&
+    getLength(provider.breeds_specialised) === 0 &&
+    hasPhotoAnalysisAttemptsRemaining(provider)
   )
 }
 
@@ -138,5 +167,18 @@ export function getBreedAnalysisPersistence(
   return {
     taggingAttemptCount,
     breedAnalysisExhausted: meaningfulResult ? false : taggingAttemptCount >= MAX_AUTO_TAGGING_ATTEMPTS,
+  }
+}
+
+export function getPhotoBreedAnalysisPersistence(
+  provider: AnalysisFields,
+  nextData: Pick<AnalysisFields, 'breeds_specialised'>
+) {
+  const photoTaggingAttemptCount = getNextPhotoTaggingAttemptCount(provider)
+  const meaningfulResult = getLength(nextData.breeds_specialised) > 0
+
+  return {
+    photoTaggingAttemptCount,
+    photoBreedAnalysisExhausted: meaningfulResult ? false : photoTaggingAttemptCount >= MAX_AUTO_TAGGING_ATTEMPTS,
   }
 }
