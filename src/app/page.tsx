@@ -55,7 +55,7 @@ const serviceCards = [
     title: "Vets who feel calm and capable",
     copy: "Compare clinics with real owner notes, booking links, and a quick sense of who handles anxious or routine care well.",
     icon: Stethoscope,
-    imagePath: "/home/vet.jpg",
+    imagePath: "/home/vet.png",
     imageAlt: "A vet examining a golden retriever in a bright clinic.",
     fallbackPrompt:
       "warm realistic veterinary clinic photograph, male vet in navy scrubs gently examining a calm golden retriever, bright clinical room, soft natural color, editorial pet care website, candid, professional",
@@ -65,7 +65,7 @@ const serviceCards = [
     title: "Groomers for regular maintenance",
     copy: "Spot gentle handling, specialist grooming options, and cat-friendly appointments without digging through generic listings.",
     icon: Scissors,
-    imagePath: "/home/grooming.jpg",
+    imagePath: "/home/grooming.png",
     imageAlt: "A long-haired cat being gently groomed on a table.",
     fallbackPrompt:
       "realistic pet grooming photo, fluffy long haired cat being gently groomed on a table by a professional groomer, soft neutral studio light, close editorial crop, premium pet care website",
@@ -75,7 +75,7 @@ const serviceCards = [
     title: "Walkers for everyday routines",
     copy: "Find walking and daytime help near you, especially when you need consistent local cover for busy weeks.",
     icon: MapPin,
-    imagePath: "/home/walking.jpg",
+    imagePath: "/home/walking.png",
     imageAlt: "A group dog walking scene with several dogs on leads outdoors.",
     fallbackPrompt:
       "realistic dog walking group photo, several friendly dogs on leads with walkers outdoors in a city park, candid movement, natural daylight, warm editorial style for pet services website",
@@ -131,7 +131,7 @@ export default async function Home() {
               <div className="relative mx-auto max-w-4xl">
                 <div className="overflow-hidden rounded-[2rem] border border-[#DCD3BE] bg-[#F4EEE4] shadow-[0_28px_60px_-34px_rgba(32,38,31,0.4)]">
                   <EditorialPhoto
-                    src="/home/hero.jpg"
+                    src="/home/hero.png"
                     alt="A woman cuddling a beagle."
                     imageSize="landscape_16_9"
                     fallbackPrompt="warm realistic editorial pet care photograph, close portrait of a young woman cuddling a calm beagle outdoors, soft natural light, intimate emotional moment, premium homepage hero image, shallow depth of field"
