@@ -1,313 +1,273 @@
-'use client';
-
-import Image from "next/image";
 import Link from "next/link";
-import { Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Cat,
+  Dog,
+  MapPin,
+  PawPrint,
+  Rabbit,
+  Scissors,
+  Star,
+  Stethoscope,
+} from "lucide-react";
+import EditorialPhoto from "@/components/home/EditorialPhoto";
+import HomeSearchCard from "@/components/home/HomeSearchCard";
+import { createClient } from "@/utils/supabase/server";
 
-type LocationSuggestion = {
-  description: string;
-  place_id: string;
-  main_text: string;
-  secondary_text: string;
+export const dynamic = "force-dynamic";
+
+type HomeStat = {
+  value: number;
+  label: string;
 };
 
-type SelectedLocation = {
-  description: string;
-  place_id: string;
-  lat: number;
-  lng: number;
-};
+const homepageStats: Array<{ key: "providers" | "reviews" | "bookings"; label: string }> = [
+  { key: "providers", label: "Local providers" },
+  { key: "reviews", label: "Verified reviews" },
+  { key: "bookings", label: "Online booking options" },
+];
 
-export default function Home() {
-  const [postcode, setPostcode] = useState("");
-  const [error, setError] = useState("");
-  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [autocompleteError, setAutocompleteError] = useState("");
-  const [selectedLocation, setSelectedLocation] = useState<SelectedLocation | null>(null);
-  const [suppressAutocomplete, setSuppressAutocomplete] = useState(false);
-  const requestCounterRef = useRef(0);
-  const postcodePattern = "[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\\s?[0-9][A-Za-z]{2}";
-  const normalizedPostcode = postcode.trim().toUpperCase().replace(/\s+/g, "");
+const petCategories = [
+  {
+    label: "Dogs",
+    href: "/search?animal=dog",
+    Icon: Dog,
+  },
+  {
+    label: "Cats",
+    href: "/search?animal=cat",
+    Icon: Cat,
+  },
+  {
+    label: "Rabbits",
+    href: "/search?animal=rabbit",
+    Icon: Rabbit,
+  },
+  {
+    label: "Small pets",
+    href: "/search?animal=small%20pet",
+    Icon: PawPrint,
+  },
+];
 
-  useEffect(() => {
-    if (suppressAutocomplete) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      setIsLoadingSuggestions(false);
-      setAutocompleteError("");
-      return;
-    }
+const serviceCards = [
+  {
+    title: "Vets who feel calm and capable",
+    copy: "Compare clinics with real owner notes, booking links, and a quick sense of who handles anxious or routine care well.",
+    icon: Stethoscope,
+    imagePath: "/home/vet.jpg",
+    imageAlt: "A vet examining a golden retriever in a bright clinic.",
+    fallbackPrompt:
+      "warm realistic veterinary clinic photograph, male vet in navy scrubs gently examining a calm golden retriever, bright clinical room, soft natural color, editorial pet care website, candid, professional",
+    imageSize: "landscape_16_9" as const,
+  },
+  {
+    title: "Groomers for regular maintenance",
+    copy: "Spot gentle handling, specialist grooming options, and cat-friendly appointments without digging through generic listings.",
+    icon: Scissors,
+    imagePath: "/home/grooming.jpg",
+    imageAlt: "A long-haired cat being gently groomed on a table.",
+    fallbackPrompt:
+      "realistic pet grooming photo, fluffy long haired cat being gently groomed on a table by a professional groomer, soft neutral studio light, close editorial crop, premium pet care website",
+    imageSize: "landscape_4_3" as const,
+  },
+  {
+    title: "Walkers for everyday routines",
+    copy: "Find walking and daytime help near you, especially when you need consistent local cover for busy weeks.",
+    icon: MapPin,
+    imagePath: "/home/walking.jpg",
+    imageAlt: "A group dog walking scene with several dogs on leads outdoors.",
+    fallbackPrompt:
+      "realistic dog walking group photo, several friendly dogs on leads with walkers outdoors in a city park, candid movement, natural daylight, warm editorial style for pet services website",
+    imageSize: "landscape_16_9" as const,
+  },
+];
 
-    const trimmedValue = postcode.trim();
+async function getHomepageStats(): Promise<HomeStat[]> {
+  const supabase = await createClient();
+  const [providerCount, reviewCount, bookingCount] = await Promise.all([
+    supabase.from("pf_providers").select("id", { count: "exact", head: true }),
+    supabase.from("pf_reviews").select("id", { count: "exact", head: true }),
+    supabase.from("pf_providers").select("id", { count: "exact", head: true }).eq("has_online_booking", true),
+  ]);
 
-    if (trimmedValue.length < 3) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      setIsLoadingSuggestions(false);
-      setAutocompleteError("");
-      return;
-    }
+  if (providerCount.error) {
+    console.error("[homepage] failed to load provider count", providerCount.error.message);
+  }
 
-    const currentRequestId = requestCounterRef.current + 1;
-    requestCounterRef.current = currentRequestId;
-    setIsLoadingSuggestions(true);
-    setAutocompleteError("");
+  if (reviewCount.error) {
+    console.error("[homepage] failed to load review count", reviewCount.error.message);
+  }
 
-    const timeoutId = window.setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/location-autocomplete?input=${encodeURIComponent(trimmedValue)}`, {
-          cache: "no-store",
-        });
+  if (bookingCount.error) {
+    console.error("[homepage] failed to load booking count", bookingCount.error.message);
+  }
 
-        if (!response.ok) {
-          throw new Error("Failed to load suggestions");
-        }
-
-        const data = await response.json();
-
-        if (requestCounterRef.current !== currentRequestId) {
-          return;
-        }
-
-        const nextSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
-        setSuggestions(nextSuggestions);
-        setShowSuggestions(nextSuggestions.length > 0);
-      } catch (fetchError) {
-        console.error("[home-page] autocomplete request failed", fetchError);
-
-        if (requestCounterRef.current !== currentRequestId) {
-          return;
-        }
-
-        setSuggestions([]);
-        setShowSuggestions(false);
-        setAutocompleteError("Location suggestions are unavailable right now.");
-      } finally {
-        if (requestCounterRef.current === currentRequestId) {
-          setIsLoadingSuggestions(false);
-        }
-      }
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [postcode, suppressAutocomplete]);
-
-  const handleSearch = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError("");
-
-    if (selectedLocation) {
-      const params = new URLSearchParams({
-        location: selectedLocation.description,
-        lat: String(selectedLocation.lat),
-        lng: String(selectedLocation.lng),
-      });
-      const debugPayload = {
-        path: 'selected-location',
-        selectedLocation,
-        searchUrl: `/search?${params.toString()}`,
-      };
-
-      console.log("[home-page] handleSearch selected-location submit", debugPayload);
-      sessionStorage.setItem('pawfinder:lastHandleSearchSubmit', JSON.stringify(debugPayload));
-
-      window.location.assign(`/search?${params.toString()}`);
-      return;
-    }
-
-    const trimmedPostcode = postcode.trim();
-    
-    if (!trimmedPostcode) {
-      setError("Please enter a postcode.");
-      return;
-    }
-
-    const postcodeRegex = /^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/i;
-    if (!postcodeRegex.test(trimmedPostcode)) {
-      setError("Please enter a full, valid UK postcode (e.g. S10 1BD). Outcodes like 'S10' are not sufficient.");
-      return;
-    }
-
-    const normalizedInput = trimmedPostcode.toUpperCase().replace(/\s+/g, "");
-    const debugPayload = {
-      path: 'postcode',
-      postcodeInput: trimmedPostcode,
-      normalizedInput,
-      searchUrl: `/search?postcode=${encodeURIComponent(normalizedInput)}`,
-    };
-    console.log("[home-page] handleSearch postcode submit", debugPayload);
-    sessionStorage.setItem('pawfinder:lastHandleSearchSubmit', JSON.stringify(debugPayload));
-    window.location.assign(`/search?postcode=${encodeURIComponent(normalizedInput)}`);
+  const values = {
+    providers: providerCount.count ?? 0,
+    reviews: reviewCount.count ?? 0,
+    bookings: bookingCount.count ?? 0,
   };
 
+  return homepageStats.map((stat) => ({
+    value: values[stat.key],
+    label: stat.label,
+  }));
+}
+
+export default async function Home() {
+  const stats = await getHomepageStats();
+
   return (
-    <div className="flex flex-col min-h-screen">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden bg-[#FAF9F6] pb-24 pt-14 sm:pt-18 lg:pb-32 lg:pt-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center max-w-3xl mx-auto">
-            <h1 className="mb-6 text-4xl font-extrabold tracking-tight text-stone-800 font-sans sm:text-5xl md:text-6xl">
-              Find the perfect care for your best friend.
-            </h1>
-            <p className="mb-8 text-base text-stone-600 sm:text-lg md:mb-10 md:text-xl">
-              Trusted vets, groomers, walkers, and kennels near you—with verified temperament reviews from real pet owners.
-            </p>
+    <div className="min-h-screen overflow-hidden bg-[#FAF7F1] text-[#20261F]">
+      <section className="relative overflow-hidden pb-16 pt-10 sm:pb-20 sm:pt-14">
+        <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,_rgba(177,74,43,0.09),_transparent_52%)]" />
+        <div className="absolute left-[-8rem] top-28 h-56 w-56 rounded-full bg-[#E4E7DA] blur-3xl" />
+        <div className="absolute right-[-6rem] top-10 h-60 w-60 rounded-full bg-[#F0DFD7] blur-3xl" />
 
-            {/* Search Box */}
-            <div className="max-w-2xl mx-auto">
-              <form action="/search" method="GET" onSubmit={handleSearch} className="relative flex flex-col gap-3 rounded-[2rem] border border-stone-200 bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:gap-0 sm:p-2">
-                <div className="relative flex flex-1 items-center px-2 sm:px-4">
-                  <Search className="mr-3 h-5 w-5 flex-shrink-0 text-stone-400" />
-                  <input 
-                    type="text" 
-                    value={postcode}
-                    onChange={(e) => {
-                      setSuppressAutocomplete(false);
-                      setPostcode(e.target.value);
-                      setError("");
-                      setSelectedLocation(null);
-                    }}
-                    onFocus={() => {
-                      if (suggestions.length > 0) {
-                        setShowSuggestions(true);
-                      }
-                    }}
-                    onBlur={() => {
-                      window.setTimeout(() => {
-                        setShowSuggestions(false);
-                      }, 150);
-                    }}
-                    placeholder="Enter a UK postcode, town or city" 
-                    required
-                    autoCapitalize="characters"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    inputMode="text"
-                    pattern={selectedLocation ? undefined : postcodePattern}
-                    title={selectedLocation ? "Search for the selected UK location." : "Please enter a full UK postcode, for example S10 1BD."}
-                    className="w-full bg-transparent border-none text-base text-stone-800 outline-none focus:ring-0 sm:text-lg"
+        <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-10">
+              <div className="relative mx-auto max-w-4xl">
+                <div className="overflow-hidden rounded-[2rem] border border-[#DCD3BE] bg-[#F4EEE4] shadow-[0_28px_60px_-34px_rgba(32,38,31,0.4)]">
+                  <EditorialPhoto
+                    src="/home/hero.jpg"
+                    alt="A woman cuddling a beagle."
+                    imageSize="landscape_16_9"
+                    fallbackPrompt="warm realistic editorial pet care photograph, close portrait of a young woman cuddling a calm beagle outdoors, soft natural light, intimate emotional moment, premium homepage hero image, shallow depth of field"
+                    className="h-[320px] w-full object-cover sm:h-[420px] lg:h-[500px]"
+                    priority
                   />
-                  <input type="hidden" name="postcode" value={normalizedPostcode} />
-                  {showSuggestions && (
-                    <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 overflow-hidden rounded-3xl border border-stone-200 bg-white text-left shadow-xl">
-                      <div className="border-b border-stone-100 px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
-                        UK Location Suggestions
-                      </div>
-                      <ul className="max-h-80 overflow-y-auto py-2">
-                        {suggestions.map((suggestion) => (
-                          <li key={suggestion.place_id}>
-                            <button
-                              type="button"
-                              onMouseDown={async (event) => {
-                                event.preventDefault();
-                                setError("");
-                                setAutocompleteError("");
-                                setShowSuggestions(false);
-                                setSuppressAutocomplete(true);
-                                setPostcode(suggestion.description);
+                </div>
 
-                                try {
-                                  const response = await fetch(
-                                    `/api/location-details?placeId=${encodeURIComponent(suggestion.place_id)}`,
-                                    { cache: "no-store" }
-                                  );
+                <div className="absolute bottom-4 right-4 w-[14.5rem] rotate-[-3deg] rounded-[1.4rem] border border-[#E7DDCA] bg-[#FFFCF8] p-4 shadow-[0_24px_45px_-28px_rgba(32,38,31,0.5)] sm:bottom-6 sm:right-6 sm:w-[16rem]">
+                  <div className="mb-2 flex items-center gap-1 text-[#B14A2B]">
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <Star key={index} className="h-4 w-4 fill-current" />
+                    ))}
+                  </div>
+                  <p className="text-sm leading-6 text-[#20261F]">
+                    “The first sitter who actually asked about our rescue dog’s triggers before the meet-and-greet.”
+                  </p>
+                  <div className="mt-3 border-t border-[#EFE5D3] pt-3 text-xs uppercase tracking-[0.16em] text-[#4A5147]">
+                    Imogen, Crookes · Beagle owner
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                                  if (!response.ok) {
-                                    throw new Error("Failed to load location details");
-                                  }
+            <div className="mx-auto max-w-3xl text-center">
+              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.26em] text-[#B14A2B] sm:text-sm">
+                Local pet care, chosen with more context
+              </p>
+              <h1 className="mx-auto max-w-3xl font-display text-[2.125rem] leading-[1.02] tracking-[-0.035em] text-[#20261F] sm:text-[3.2rem] lg:text-[4rem]">
+                Find <span className="italic text-[#B14A2B]">vetted</span> care that fits your pet, your postcode, and your routine.
+              </h1>
+              <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#4A5147] sm:text-lg">
+                Search trusted vets, groomers, walkers, and sitters near you, with the kind of owner context that makes decisions easier.
+              </p>
+            </div>
 
-                                  const details = await response.json();
-                                  setSelectedLocation({
-                                    description: suggestion.description,
-                                    place_id: suggestion.place_id,
-                                    lat: details.lat,
-                                    lng: details.lng,
-                                  });
-                                } catch (detailsError) {
-                                  console.error("[home-page] location details request failed", detailsError);
-                                  setSelectedLocation(null);
-                                  setAutocompleteError("We couldn't prepare that location. Please try again.");
-                                }
-                              }}
-                              className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-stone-50"
-                            >
-                              <Search className="mt-0.5 h-4 w-4 flex-shrink-0 text-stone-300" />
-                              <span className="min-w-0">
-                                <span className="block truncate text-sm font-semibold text-stone-800">
-                                  {suggestion.main_text}
-                                </span>
-                                {suggestion.secondary_text && (
-                                  <span className="block truncate text-xs text-stone-500">
-                                    {suggestion.secondary_text}
-                                  </span>
-                                )}
-                              </span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+            <div className="mx-auto mt-8 max-w-2xl">
+              <HomeSearchCard />
+            </div>
+
+            <div className="mx-auto mt-6 max-w-3xl rounded-[1.7rem] border border-[#DCD3BE] bg-white/80 p-3 shadow-[0_16px_36px_-28px_rgba(32,38,31,0.35)] backdrop-blur">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {stats.map((stat) => (
+                  <div key={stat.label} className="rounded-[1.25rem] border border-transparent px-4 py-4 text-center sm:border-[#EEE7D6] sm:bg-[#FFFDFC]">
+                    <div className="font-display text-3xl tracking-[-0.04em] text-[#20261F]">
+                      {stat.value.toLocaleString("en-GB")}
                     </div>
-                  )}
-                </div>
-                <button type="submit" className="w-full rounded-full bg-[#e07a5f] px-6 py-3 font-semibold text-white transition-colors hover:bg-[#d06950] sm:w-auto sm:px-8">
-                  Search
-                </button>
-              </form>
-              {postcode.trim().length >= 3 && (
-                <div className="mt-3 text-sm text-stone-500">
-                  {isLoadingSuggestions
-                    ? "Loading UK location suggestions..."
-                    : autocompleteError || "Suggestions are limited to UK towns, cities, and postcode areas."}
-                </div>
-              )}
-              {error && (
-                <div className="mt-4 inline-block rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-500 sm:text-base">
-                  {error}
-                </div>
-              )}
+                    <div className="mt-1 text-sm text-[#4A5147]">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-        
-        {/* Background decorative elements */}
-        <div className="absolute top-1/2 left-0 -translate-y-1/2 -translate-x-1/2 w-96 h-96 bg-[#829e8d]/10 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/4 right-0 -translate-y-1/2 translate-x-1/3 w-[500px] h-[500px] bg-[#e07a5f]/10 rounded-full blur-3xl"></div>
       </section>
 
-      {/* Animal Categories */}
-      <section className="bg-white py-16 sm:py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-10 text-center text-2xl font-bold text-stone-800 sm:mb-12 sm:text-3xl">What kind of pet do you have?</h2>
-          
-          <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4">
-            {['Dog', 'Cat', 'Rabbit', 'Small Pet'].map((animal) => (
-              <Link href={`/search?animal=${animal.toLowerCase()}`} key={animal} className="group relative rounded-2xl overflow-hidden aspect-square bg-stone-100 flex items-center justify-center">
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors z-10"></div>
-                {/* Replace with actual photography later */}
-                <div className="relative z-20 px-3 text-center text-lg font-bold tracking-wide text-white sm:text-2xl">
-                  {animal}
-                </div>
-              </Link>
-            ))}
+      <section className="pb-14 sm:pb-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#B14A2B]">Browse by pet</p>
+              <h2 className="mt-3 font-display text-[2rem] leading-tight tracking-[-0.03em] text-[#20261F] sm:text-[2.4rem]">
+                What kind of pet do you have?
+              </h2>
+            </div>
+          </div>
+
+          <div className="-mx-4 mt-8 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
+            <div className="flex min-w-max gap-3">
+              {petCategories.map(({ label, href, Icon }) => (
+                <Link
+                  key={label}
+                  href={href}
+                  className="pressable-soft inline-flex items-center gap-3 rounded-full border border-[#DCD3BE] bg-[#E4E7DA] px-4 py-3 text-sm font-medium text-[#20261F] transition hover:border-[#C5B89E] hover:bg-[#DCE1CD]"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#6E7C5B]">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <span className="pr-1 text-base">{label}</span>
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
       </section>
-      
-      {/* Value Prop */}
-      <section className="bg-[#829e8d] py-18 text-white sm:py-24">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="mb-6 text-3xl font-bold md:text-4xl">Not just another directory.</h2>
-          <p className="mx-auto mb-10 max-w-2xl text-base text-[#e8eee9] sm:text-lg md:text-xl">
-            PawFinder is built differently. Read pf_reviews specifically tailored to your pet's breed and temperament. Does your anxious rescue need a calm handler? We've got you covered.
-          </p>
-          <Link href="/search" className="inline-flex rounded-full bg-white px-6 py-3 font-bold text-[#829e8d] transition-colors hover:bg-stone-100 sm:px-8">
-            Browse Providers
-          </Link>
+
+      <section className="pb-20 sm:pb-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <div className="rounded-[2.3rem] border border-[#DCD3BE] bg-white/75 p-5 shadow-[0_22px_45px_-30px_rgba(32,38,31,0.28)] backdrop-blur sm:p-8">
+            <div className="max-w-2xl">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#B14A2B]">Care types</p>
+              <h2 className="mt-3 font-display text-[2rem] leading-tight tracking-[-0.03em] text-[#20261F] sm:text-[2.5rem]">
+                Choose the kind of help you actually need.
+              </h2>
+              <p className="mt-4 text-base leading-7 text-[#4A5147]">
+                The homepage now leads with search, but these pathways still help orient first-time visitors toward the right type of care.
+              </p>
+            </div>
+
+            <div className="mt-8 grid gap-5 lg:grid-cols-3">
+              {serviceCards.map((card) => {
+                const Icon = card.icon;
+
+                return (
+                  <article
+                    key={card.title}
+                    className="flex h-full flex-col overflow-hidden rounded-[1.8rem] border border-[#E6DECD] bg-[#FFFCF7]"
+                  >
+                    <EditorialPhoto
+                      src={card.imagePath}
+                      alt={card.imageAlt}
+                      imageSize={card.imageSize}
+                      fallbackPrompt={card.fallbackPrompt}
+                      className="h-56 w-full object-cover"
+                    />
+                    <div className="flex flex-1 flex-col p-5">
+                      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-[#E4E7DA] text-[#6E7C5B]">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <h3 className="font-display text-[1.6rem] leading-tight tracking-[-0.03em] text-[#20261F]">
+                        {card.title}
+                      </h3>
+                      <p className="mt-3 flex-1 text-sm leading-7 text-[#4A5147]">{card.copy}</p>
+                      <Link
+                        href="/search"
+                        className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#B14A2B] transition hover:text-[#943920]"
+                      >
+                        Browse providers
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </section>
     </div>
