@@ -1,0 +1,20 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" rx="48" fill="#F6F1E8"/>
+  <circle cx="250" cy="170" r="120" fill="#E8DED0"/>
+  <circle cx="980" cy="760" r="160" fill="#E8DED0"/>
+  <circle cx="430" cy="250" r="42" fill="#C7B49C"/>
+  <circle cx="540" cy="180" r="42" fill="#C7B49C"/>
+  <circle cx="660" cy="180" r="42" fill="#C7B49C"/>
+  <circle cx="770" cy="250" r="42" fill="#C7B49C"/>
+  <ellipse cx="600" cy="390" rx="180" ry="150" fill="#C7B49C"/>
+  <ellipse cx="540" cy="390" rx="26" ry="22" fill="#8B6B54"/>
+  <ellipse cx="660" cy="390" rx="26" ry="22" fill="#8B6B54"/>
+  <ellipse cx="600" cy="450" rx="38" ry="28" fill="#8B6B54"/>
+  <path d="M550 495C564 515 581 525 600 525C619 525 636 515 650 495" stroke="#8B6B54" stroke-width="16" stroke-linecap="round"/>
+  <text x="600" y="660" text-anchor="middle" fill="#6C8676" font-family="Arial, sans-serif" font-size="48" font-weight="700">
+    PawFinder
+  </text>
+  <text x="600" y="720" text-anchor="middle" fill="#9E8F81" font-family="Arial, sans-serif" font-size="28">
+    Pet-friendly image preview
+  </text>
+</svg>
