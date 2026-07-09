@@ -1,8 +1,24 @@
+type CacheableRecord = Record<string, unknown>
+
+type CacheableProviderSnapshot = CacheableRecord & {
+  google_place_id?: string | null
+  id?: string | null
+}
+
+type CacheableLiveDetails = CacheableRecord & {
+  place_id?: string | null
+}
+
+type CacheableFeaturedEnrichment = CacheableRecord & {
+  google_place_id?: string | null
+  id?: string | null
+}
+
 type ProviderSessionCacheEntry = {
-  providerSnapshot?: any
-  liveDetails?: any
-  reviewsSnapshot?: any[]
-  featuredEnrichment?: any
+  providerSnapshot?: CacheableProviderSnapshot
+  liveDetails?: CacheableLiveDetails
+  reviewsSnapshot?: CacheableRecord[]
+  featuredEnrichment?: CacheableFeaturedEnrichment
 }
 
 type ProviderSessionCacheUpdate = Partial<ProviderSessionCacheEntry>

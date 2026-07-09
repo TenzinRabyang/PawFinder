@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense, useRef, useMemo } from 'react'
+import { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star } from 'lucide-react'
@@ -11,6 +11,36 @@ import { primeProviderSessionCache } from '@/lib/provider-session-cache'
 
 type FeaturedLoadStatus = 'idle' | 'loading' | 'ready' | 'delayed' | 'error'
 type SortOption = 'distance' | 'rating' | 'review_count'
+type RatingSummary = {
+  score: number
+  count: number
+  source?: string
+}
+
+type SearchProvider = {
+  id: string
+  google_place_id?: string
+  category?: string
+  subscription_tier?: string
+  photo_reference?: string | null
+  name: string
+  address?: string
+  postcode?: string
+  distance_miles?: number
+  google_rating?: RatingSummary | null
+  native_rating?: RatingSummary | null
+  services?: string[]
+  animals_served?: string[]
+  breeds_specialised?: string[]
+  breeds_general_inferred?: string[]
+  breed_match_type?: string
+  ai_summary?: string | null
+}
+
+type FeaturedEnrichmentResponse = {
+  google_place_id?: string
+  live_details?: Record<string, unknown>
+} & Partial<SearchProvider>
 
 function SearchContent() {
   const RESULTS_PAGE_SIZE = 5
@@ -31,7 +61,7 @@ function SearchContent() {
     breed: searchParams.get('breed'),
     href: typeof window !== 'undefined' ? window.location.href : 'server',
   })
-  const [pf_providers, setProviders] = useState<any[]>([])
+  const [pf_providers, setProviders] = useState<SearchProvider[]>([])
   const [loading, setLoading] = useState(true)
 
   const [error, setError] = useState<string | null>(null)
@@ -58,41 +88,17 @@ function SearchContent() {
     return 'distance'
   }, [searchParams])
 
-  useEffect(() => {
-    // Automatically fetch providers when filters state updates from the URL
-    const autoFetchKey = JSON.stringify({
-      postcode: filters.postcode,
-      lat: selectedLat,
-      lng: selectedLng,
-      animal: filters.animal,
-      category: filters.category,
-      service: filters.service,
-      breed: filters.breed,
-    })
+  const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+  const getErrorName = (error: unknown) => (error instanceof Error ? error.name : '')
 
-    console.log('[search-page] postcode effect', {
-      postcode: filters.postcode,
-      lat: selectedLat,
-      lng: selectedLng,
-      filters,
-      autoFetchKey,
-      lastAutoFetchKey: lastAutoFetchKeyRef.current,
-      href: window.location.href,
-    })
-    if ((filters.postcode || (selectedLat && selectedLng)) && lastAutoFetchKeyRef.current !== autoFetchKey) {
-      lastAutoFetchKeyRef.current = autoFetchKey
-      fetchProviders()
-    }
-  }, [filters, selectedLat, selectedLng, selectedLocationLabel]) // Auto-fetch once per distinct URL-derived filter state
-
-  const fetchFeaturedEnrichment = async (providerId: string) => {
+  const fetchFeaturedEnrichment = useCallback(async (providerId: string) => {
     setFeaturedLoadStatus((prev) => ({ ...prev, [providerId]: 'loading' }))
 
     try {
       const res = await fetch(`/api/providers/${encodeURIComponent(providerId)}/featured-enrichment`, {
         signal: AbortSignal.timeout(15000),
       })
-      const data = await res.json()
+      const data = (await res.json()) as FeaturedEnrichmentResponse
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load featured details')
@@ -108,14 +114,14 @@ function SearchContent() {
         prev.map((provider) => (provider.id === providerId ? { ...provider, ...data } : provider))
       )
       setFeaturedLoadStatus((prev) => ({ ...prev, [providerId]: 'ready' }))
-    } catch (err: any) {
+    } catch (err: unknown) {
       const nextStatus: FeaturedLoadStatus =
-        err?.name === 'TimeoutError' || err?.name === 'AbortError' ? 'delayed' : 'error'
+        getErrorName(err) === 'TimeoutError' || getErrorName(err) === 'AbortError' ? 'delayed' : 'error'
       setFeaturedLoadStatus((prev) => ({ ...prev, [providerId]: nextStatus }))
     }
-  }
+  }, [])
 
-  const fetchProviders = async () => {
+  const fetchProviders = useCallback(async () => {
     setLoading(true)
     setError(null)
     setFeaturedLoadStatus({})
@@ -155,7 +161,7 @@ function SearchContent() {
         throw new Error(data.error || 'Failed to fetch providers')
       }
       
-      const providers = data.pf_providers || []
+      const providers = (data.pf_providers || []) as SearchProvider[]
       for (const provider of providers) {
         primeProviderSessionCache(provider.google_place_id || provider.id, {
           providerSnapshot: provider,
@@ -163,19 +169,46 @@ function SearchContent() {
       }
       setProviders(providers)
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[search-page] fetchProviders error', {
-        message: err?.message ?? String(err),
-        stack: err?.stack ?? null,
+        message: getErrorMessage(err),
+        stack: err instanceof Error ? err.stack : null,
         filters,
         href: window.location.href,
       })
-      setError(err.message)
+      setError(getErrorMessage(err))
       setProviders([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [RESULTS_PAGE_SIZE, filters, selectedLat, selectedLng, selectedLocationLabel])
+
+  useEffect(() => {
+    // Automatically fetch providers when filters state updates from the URL
+    const autoFetchKey = JSON.stringify({
+      postcode: filters.postcode,
+      lat: selectedLat,
+      lng: selectedLng,
+      animal: filters.animal,
+      category: filters.category,
+      service: filters.service,
+      breed: filters.breed,
+    })
+
+    console.log('[search-page] postcode effect', {
+      postcode: filters.postcode,
+      lat: selectedLat,
+      lng: selectedLng,
+      filters,
+      autoFetchKey,
+      lastAutoFetchKey: lastAutoFetchKeyRef.current,
+      href: window.location.href,
+    })
+    if ((filters.postcode || (selectedLat && selectedLng)) && lastAutoFetchKeyRef.current !== autoFetchKey) {
+      lastAutoFetchKeyRef.current = autoFetchKey
+      void fetchProviders()
+    }
+  }, [fetchProviders, filters, selectedLat, selectedLng])
 
   const updateSearchUrl = ({
     nextFilters = filters,
@@ -220,7 +253,7 @@ function SearchContent() {
     updateSearchUrl({ nextSortBy: value })
   }
 
-  const getSortMetrics = (provider: any) => {
+  const getSortMetrics = (provider: SearchProvider) => {
     const reviewScore =
       typeof provider?.native_rating?.score === 'number'
         ? provider.native_rating.score
@@ -280,10 +313,16 @@ function SearchContent() {
     const status = featuredLoadStatus[featuredProvider.id]
     if (status === 'loading' || status === 'ready') return
 
-    fetchFeaturedEnrichment(featuredProvider.id)
-  }, [sortedProviders, featuredLoadStatus])
+    const timeoutId = window.setTimeout(() => {
+      void fetchFeaturedEnrichment(featuredProvider.id)
+    }, 0)
 
-  const getPrimaryTags = (provider: any) => {
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [fetchFeaturedEnrichment, featuredLoadStatus, sortedProviders])
+
+  const getPrimaryTags = (provider: SearchProvider) => {
     const visibleConfirmedServices = removeCategoryDuplicateServices({
       category: provider.category,
       services: provider.services,
