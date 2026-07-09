@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { Star, MapPin, CheckCircle, Info, ShieldCheck, Copy, Check } from 'lucide-react'
@@ -9,6 +9,7 @@ import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
+  type BreedAnalysisStatus,
   getBreedAnalysisStatus,
   hasAnalysisAttemptsRemaining,
   hasMeaningfulBreedAnalysis,
@@ -22,6 +23,95 @@ import {
 } from '@/lib/provider-name-service-inference'
 import { getProviderSessionCache, primeProviderSessionCache } from '@/lib/provider-session-cache'
 
+type ProviderProfileRecord = {
+  id: string
+  google_place_id: string
+  name: string
+  address: string
+  postcode?: string | null
+  category?: string | null
+  subscription_tier?: string | null
+  website?: string | null
+  phone?: string | null
+  breeds_specialised?: string[] | null
+  services?: string[] | null
+  services_inferred_from_name?: string[] | null
+  animals_served?: string[] | null
+  breeds_general_inferred?: string[] | null
+  has_online_booking?: boolean | null
+  booking_url?: string | null
+  booking_checked_at?: string | null
+  tagging_attempt_count?: number | null
+  breed_analysis_exhausted?: boolean | null
+  photo_tagging_attempt_count?: number | null
+  photo_breed_analysis_exhausted?: boolean | null
+  ai_tagged_at?: string | null
+  ai_tagging_skipped_low_content?: boolean | null
+  is_claimed?: boolean | null
+  is_verified?: boolean | null
+  review_summary?: string | null
+  [key: string]: unknown
+}
+
+type NativeReview = {
+  id: string
+  user_id?: string | null
+  handling_rating?: number | null
+  environment_rating?: number | null
+  dog_breed?: string | null
+  temperament_tags?: string[]
+  comment?: string | null
+  created_at: string
+  pf_profiles?: { full_name: string | null } | null
+}
+
+type LivePhoto = {
+  photo_reference?: string
+  [key: string]: unknown
+}
+
+type LiveReview = {
+  author_name?: string
+  rating?: number | null
+  text?: string
+  relative_time_description?: string
+  [key: string]: unknown
+}
+
+type LiveDetailsRecord = {
+  place_id?: string
+  name?: string
+  formatted_address?: string
+  formatted_phone_number?: string
+  website?: string
+  types?: string[]
+  photos?: LivePhoto[]
+  reviews?: LiveReview[]
+  rating?: number | null
+  user_ratings_total?: number | null
+  opening_hours?: {
+    open_now?: boolean
+    [key: string]: unknown
+  } | null
+  ai_summary?: string | null
+  error?: unknown
+  [key: string]: unknown
+}
+
+type EnsureTagsResponse = {
+  provider?: ProviderProfileRecord
+  analysis_status?: BreedAnalysisStatus | 'category_unresolved'
+  error?: string
+}
+
+type ProviderPageBreedStatus =
+  | BreedAnalysisStatus
+  | 'idle'
+  | 'loading'
+  | 'generating'
+  | 'delayed'
+  | 'category_unresolved'
+
 export default function ProviderProfile({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const id = resolvedParams.id
@@ -29,28 +119,14 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const isFeaturedProfile = searchParams.get('featured') === '1'
   const requestedCategory = searchParams.get('category')
   
-  const supabase = createClient()
-  const [provider, setProvider] = useState<any>(null)
-  const [pf_reviews, setReviews] = useState<any[]>([])
-  const [liveDetails, setLiveDetails] = useState<any>(null)
+  const supabase = useMemo(() => createClient(), [])
+  const [provider, setProvider] = useState<ProviderProfileRecord | null>(null)
+  const [pf_reviews, setReviews] = useState<NativeReview[]>([])
+  const [liveDetails, setLiveDetails] = useState<LiveDetailsRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadingMessage, setLoadingMessage] = useState('Loading profile...')
-  const [breedTagStatus, setBreedTagStatus] = useState<
-    | 'idle'
-    | 'loading'
-    | 'generating'
-    | 'confirmed'
-    | 'retrying'
-    | 'photo_retrying'
-    | 'photo_exhausted'
-    | 'unavailable'
-    | 'services_only'
-    | 'delayed'
-    | 'fetch_blocked'
-    | 'no_website'
-    | 'category_unresolved'
-  >('idle')
-  const [user, setUser] = useState<any>(null)
+  const [breedTagStatus, setBreedTagStatus] = useState<ProviderPageBreedStatus>('idle')
+  const [user, setUser] = useState<unknown>(null)
   const [showCallPopup, setShowCallPopup] = useState(false)
   const [showCopiedState, setShowCopiedState] = useState(false)
   const [reviewSubmitState, setReviewSubmitState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -119,7 +195,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     }
   }
 
-  const getReviewAverage = (review: any) => Number((((review.handling_rating || 0) + (review.environment_rating || 0)) / 2).toFixed(1))
+  const getReviewAverage = (review: NativeReview) =>
+    Number((((review.handling_rating || 0) + (review.environment_rating || 0)) / 2).toFixed(1))
 
   const getReviewerInitials = (name: string | null | undefined) =>
     (name || 'Anonymous User')
@@ -200,9 +277,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     reviewsSnapshot,
   }: {
     placeId: string
-    providerSnapshot?: any
-    liveDetailsSnapshot?: any
-    reviewsSnapshot?: any[]
+    providerSnapshot?: ProviderProfileRecord
+    liveDetailsSnapshot?: LiveDetailsRecord | null
+    reviewsSnapshot?: NativeReview[]
   }) => {
     primeProviderSessionCache(placeId, {
       providerSnapshot,
@@ -211,15 +288,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     })
   }
 
-  useEffect(() => {
-    fetchData()
-  }, [id, isFeaturedProfile, requestedCategory])
-
-  const refreshSavedProviderAnalysis = async (
+  const refreshSavedProviderAnalysis = useCallback(async (
     placeId: string,
-    baseProvider: any,
+    baseProvider: ProviderProfileRecord,
     website: string | null | undefined,
-    liveData: any
+    liveData: LiveDetailsRecord
   ) => {
     setBreedTagStatus('generating')
 
@@ -248,7 +321,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       })
 
       if (ensureTagsRes.ok && ensureTagsRes.headers.get('content-type')?.includes('application/json')) {
-        const ensureTagsData = await ensureTagsRes.json()
+        const ensureTagsData = (await ensureTagsRes.json()) as EnsureTagsResponse
         if (ensureTagsData.provider) {
           const ensuredProvider = ensureTagsData.provider
           const mergedProvider = {
@@ -259,7 +332,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             phone: liveData.formatted_phone_number || ensuredProvider.phone,
           }
 
-          setProvider((currentProvider: any) =>
+          setProvider((currentProvider) =>
             currentProvider?.google_place_id === placeId ? { ...currentProvider, ...mergedProvider } : mergedProvider
           )
           syncProviderSessionCache({
@@ -308,8 +381,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       }
 
       setBreedTagStatus(getBreedAnalysisStatus(baseProvider))
-    } catch (error: any) {
-      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    } catch (error: unknown) {
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
         console.warn('[provider-page] ensure-tags timed out', { id: placeId })
         setBreedTagStatus('delayed')
         return
@@ -318,13 +391,13 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       console.error('[provider-page] ensure-tags failed', error)
       setBreedTagStatus('unavailable')
     }
-  }
+  }, [])
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     const cachedProfile = getProviderSessionCache(id)
-    const cachedProvider = cachedProfile?.providerSnapshot
-    const cachedLiveDetails = cachedProfile?.liveDetails
-    const cachedReviews = cachedProfile?.reviewsSnapshot
+    const cachedProvider = (cachedProfile?.providerSnapshot as ProviderProfileRecord | undefined) || null
+    const cachedLiveDetails = (cachedProfile?.liveDetails as LiveDetailsRecord | undefined) || null
+    const cachedReviews = (cachedProfile?.reviewsSnapshot as NativeReview[] | undefined) || null
     const hasRenderableCachedProfile = Boolean(cachedProvider)
 
     if (hasRenderableCachedProfile) {
@@ -363,7 +436,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     // Since 'id' is now the Google Place ID from the search page
     // 1. Fetch live details from Google Places first
     try {
-      let data: any = cachedLiveDetails ? { ...cachedLiveDetails } : {}
+      let data: LiveDetailsRecord = cachedLiveDetails ? { ...cachedLiveDetails } : {}
       let canonicalPlaceId =
         typeof data.place_id === 'string' && data.place_id ? data.place_id : id
 
@@ -372,8 +445,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         let res: Response | null = null
         try {
           res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
-        } catch (error: any) {
-          if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        } catch (error: unknown) {
+          if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
             console.warn('[provider-page] live details timed out', { id, detailsUrl })
           } else {
             throw error
@@ -402,7 +475,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         .eq('google_place_id', canonicalPlaceId)
         .maybeSingle()
 
-      let resolvedProvider = prov
+      const resolvedProvider: ProviderProfileRecord = prov
         ? {
             ...prov,
             google_place_id: canonicalPlaceId,
@@ -478,7 +551,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         liveDetailsSnapshot: !data.error ? data : cachedLiveDetails,
       })
 
-      let resolvedReviews: any[] = []
+      let resolvedReviews: NativeReview[] = []
       if (resolvedProvider.id !== id) {
         // Fetch native pf_reviews using our internal DB ID
         const { data: revs } = await supabase
@@ -487,8 +560,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           .eq('provider_id', resolvedProvider.id)
           .order('created_at', { ascending: false })
 
-        const reviewRows = revs || []
-        const reviewerIds = [...new Set(reviewRows.map((review: any) => review.user_id).filter(Boolean))]
+        const reviewRows = (revs || []) as NativeReview[]
+        const reviewerIds = [...new Set(reviewRows.map((review) => review.user_id).filter(Boolean))]
         let reviewerMap = new Map<string, { full_name: string | null }>()
 
         if (reviewerIds.length > 0) {
@@ -497,13 +570,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             .select('id, full_name')
             .in('id', reviewerIds)
 
-          reviewerMap = new Map((reviewerRows || []).map((row: any) => [row.id, { full_name: row.full_name }]))
+          reviewerMap = new Map(
+            ((reviewerRows || []) as Array<{ id: string; full_name: string | null }>).map((row) => [
+              row.id,
+              { full_name: row.full_name },
+            ])
+          )
         }
 
-        resolvedReviews = reviewRows.map((review: any) => ({
-            ...review,
-            pf_profiles: reviewerMap.get(review.user_id) || null,
-          }))
+        resolvedReviews = reviewRows.map((review) => ({
+          ...review,
+          pf_profiles: review.user_id ? reviewerMap.get(review.user_id) || null : null,
+        }))
         setReviews(resolvedReviews)
       } else {
         setReviews([])
@@ -521,7 +599,17 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     }
 
     setLoading(false)
-  }
+  }, [id, requestedCategory, supabase, refreshSavedProviderAnalysis])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      void fetchData()
+    }, 0)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [fetchData])
 
   const submitReview = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -554,7 +642,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         comment: '',
         temperament_tags: []
       })
-      fetchData() // refresh
+      void fetchData() // refresh
     } else {
       setReviewSubmitState('error')
       alert('Failed to submit review')
@@ -977,7 +1065,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
 
                 {liveDetails?.photos && (
                   <div className="mt-6 grid grid-cols-2 gap-2">
-                    {liveDetails.photos.slice(1, 5).map((photo: any, i: number) => (
+                    {liveDetails.photos.slice(1, 5).map((photo: LivePhoto, i: number) => (
                       <div key={i} className="relative h-24 overflow-hidden rounded-lg sm:h-28 md:h-24">
                         <ProviderImage
                           photoReference={photo.photo_reference}
@@ -1025,7 +1113,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 Showing up to 5 live Google reviews for the nearest result you opened from search.
               </p>
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                {liveDetails.reviews.slice(0, 5).map((review: any, index: number) => (
+                {liveDetails.reviews.slice(0, 5).map((review: LiveReview, index: number) => (
                   <div
                     key={`${review.author_name || 'review'}-${index}`}
                     className="rounded-[1.5rem] border border-[#E7DDD1] bg-[#FBF7F1] p-5"
@@ -1086,7 +1174,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   <div>
                     <label className="block text-sm font-medium text-stone-700 mb-2">Handling Rating (1-5)</label>
                     <input type="number" min="1" max="5" value={reviewForm.handling_rating} onChange={e => setReviewForm({...reviewForm, handling_rating: parseInt(e.target.value)})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
-                    <p className="text-xs text-stone-500 mt-1">How well did they handle your pet's specific needs?</p>
+                    <p className="text-xs text-stone-500 mt-1">How well did they handle your pet&apos;s specific needs?</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-stone-700 mb-2">Environment Rating (1-5)</label>
