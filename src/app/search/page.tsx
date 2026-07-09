@@ -38,6 +38,7 @@ type SearchProvider = {
 }
 
 type FeaturedEnrichmentResponse = {
+  error?: string
   google_place_id?: string
   live_details?: Record<string, unknown>
 } & Partial<SearchProvider>
@@ -343,8 +344,8 @@ function SearchContent() {
     return value
   }
 
-  const formatCategoryLabel = (value: string) =>
-    value
+  const formatCategoryLabel = (value: string | null | undefined) =>
+    (value || 'Uncategorised')
       .split('_')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')

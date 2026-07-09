@@ -15,8 +15,6 @@ import {
 } from '@/lib/provider-analysis-state'
 import { getWebsiteAnalysisMessage, type WebsiteAnalysisStatus } from '@/lib/website-analysis-status'
 
-const supabaseAdmin = createAdminClient()
-
 function isMissingInferredServicesColumnError(error: { code?: string; message?: string } | null | undefined) {
   return (
     error?.code === 'PGRST204' &&
@@ -41,6 +39,7 @@ function shouldRunWebsiteAnalysis(provider: {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const supabaseAdmin = createAdminClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {

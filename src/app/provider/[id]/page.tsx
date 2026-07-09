@@ -278,7 +278,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   }: {
     placeId: string
     providerSnapshot?: ProviderProfileRecord
-    liveDetailsSnapshot?: LiveDetailsRecord | null
+    liveDetailsSnapshot?: LiveDetailsRecord
     reviewsSnapshot?: NativeReview[]
   }) => {
     primeProviderSessionCache(placeId, {
@@ -548,7 +548,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       syncProviderSessionCache({
         placeId: canonicalPlaceId,
         providerSnapshot: resolvedProvider,
-        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails,
+        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails || undefined,
       })
 
       let resolvedReviews: NativeReview[] = []
@@ -590,7 +590,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       syncProviderSessionCache({
         placeId: canonicalPlaceId,
         providerSnapshot: resolvedProvider,
-        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails,
+        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails || undefined,
         reviewsSnapshot: resolvedProvider.id !== id ? resolvedReviews : [],
       })
     } catch (error) {
@@ -614,6 +614,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const submitReview = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return alert('Please sign in to leave a review')
+    if (!provider) return alert('Provider details are still loading.')
 
     // If the provider isn't in our DB yet, we need to create it first!
     // For simplicity in this demo, we'll alert if it's not claimed/saved in DB
@@ -710,6 +711,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const bookingUrl = hasOnlineBooking ? normalizeExternalUrl(provider.booking_url) : null
   const callNumber = getDisplayPhoneNumber(provider.phone || liveDetails?.formatted_phone_number)
   const isOpenNow = liveDetails?.opening_hours?.open_now
+  const livePhotos = liveDetails?.photos ?? []
+  const liveReviews = liveDetails?.reviews ?? []
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
   const locationLabel = provider.address || provider.postcode || 'Address unavailable'
@@ -1063,9 +1066,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   </p>
                 </div>
 
-                {liveDetails?.photos && (
+                {livePhotos.length > 0 && (
                   <div className="mt-6 grid grid-cols-2 gap-2">
-                    {liveDetails.photos.slice(1, 5).map((photo: LivePhoto, i: number) => (
+                    {livePhotos.slice(1, 5).map((photo: LivePhoto, i: number) => (
                       <div key={i} className="relative h-24 overflow-hidden rounded-lg sm:h-28 md:h-24">
                         <ProviderImage
                           photoReference={photo.photo_reference}
@@ -1106,14 +1109,14 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             )}
           </div>
 
-          {isFeaturedProfile && liveDetails?.reviews?.length > 0 && (
+          {isFeaturedProfile && liveReviews.length > 0 && (
             <div className="mt-8 rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFFDFC] p-5 shadow-[0_18px_40px_-34px_rgba(60,48,35,0.2)] sm:p-8">
               <h2 className="font-display text-2xl font-bold text-[#344136]">Google Review Preview</h2>
               <p className="mt-1 text-sm text-[#77736B]">
                 Showing up to 5 live Google reviews for the nearest result you opened from search.
               </p>
               <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                {liveDetails.reviews.slice(0, 5).map((review: LiveReview, index: number) => (
+                {liveReviews.slice(0, 5).map((review: LiveReview, index: number) => (
                   <div
                     key={`${review.author_name || 'review'}-${index}`}
                     className="rounded-[1.5rem] border border-[#E7DDD1] bg-[#FBF7F1] p-5"
@@ -1242,6 +1245,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 {pf_reviews.map((review) => {
                   const reviewerName = review.pf_profiles?.full_name || 'Anonymous User'
                   const averageScore = getReviewAverage(review)
+                  const handlingRating = review.handling_rating || 0
+                  const environmentRating = review.environment_rating || 0
+                  const temperamentTags = review.temperament_tags || []
 
                   return (
                     <article key={review.id} className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm sm:p-5">
@@ -1272,10 +1278,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         <div className="rounded-xl bg-stone-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Handling</div>
                           <div className="mt-1 flex items-center gap-2">
-                            <span className="text-base font-bold text-stone-900">{review.handling_rating}/5</span>
+                            <span className="text-base font-bold text-stone-900">{handlingRating}/5</span>
                             <div className="flex text-[#e07a5f]">
                               {[...Array(5)].map((_, i) => (
-                                <Star key={i} className={`h-3.5 w-3.5 ${i < review.handling_rating ? 'fill-current' : 'text-stone-300'}`} />
+                                <Star key={i} className={`h-3.5 w-3.5 ${i < handlingRating ? 'fill-current' : 'text-stone-300'}`} />
                               ))}
                             </div>
                           </div>
@@ -1283,10 +1289,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         <div className="rounded-xl bg-stone-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Environment</div>
                           <div className="mt-1 flex items-center gap-2">
-                            <span className="text-base font-bold text-stone-900">{review.environment_rating}/5</span>
+                            <span className="text-base font-bold text-stone-900">{environmentRating}/5</span>
                             <div className="flex text-[#e07a5f]">
                               {[...Array(5)].map((_, i) => (
-                                <Star key={i} className={`h-3.5 w-3.5 ${i < review.environment_rating ? 'fill-current' : 'text-stone-300'}`} />
+                                <Star key={i} className={`h-3.5 w-3.5 ${i < environmentRating ? 'fill-current' : 'text-stone-300'}`} />
                               ))}
                             </div>
                           </div>
@@ -1297,9 +1303,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         <p className="text-sm leading-6 text-stone-700">{review.comment}</p>
                       </div>
 
-                      {review.temperament_tags?.length > 0 && (
+                      {temperamentTags.length > 0 && (
                         <div className="mt-4 flex flex-wrap gap-2">
-                          {review.temperament_tags.map((tag: string) => (
+                          {temperamentTags.map((tag: string) => (
                             <span key={tag} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-600">
                               {tag}
                             </span>

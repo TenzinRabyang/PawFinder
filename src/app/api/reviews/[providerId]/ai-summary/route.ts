@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/utils/supabase/admin'
 
-const supabaseAdmin = createAdminClient()
-
 export async function POST(request: Request, { params }: { params: Promise<{ providerId: string }> }) {
   const { providerId } = await params
+  const supabaseAdmin = createAdminClient()
 
   // Fetch all pf_reviews for this provider
   const { data: pf_reviews } = await supabaseAdmin

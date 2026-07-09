@@ -21,8 +21,6 @@ import {
 } from '@/lib/provider-analysis-state'
 import { resolvePlaceDetailsWithAutoHeal } from '@/lib/provider-place-id-recovery'
 
-const supabaseAdmin = createAdminClient()
-
 function isMissingInferredServicesColumnError(error: { code?: string; message?: string } | null | undefined) {
   return (
     error?.code === 'PGRST204' &&
@@ -152,6 +150,7 @@ function getPhotoInferenceErrorDetails(error: unknown): {
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  const supabaseAdmin = createAdminClient()
   const body = (await request.json().catch(() => ({}))) as EnsureTagsBody
   const googleApiKey = process.env.GOOGLE_PLACES_API_KEY
 
