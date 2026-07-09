@@ -20,6 +20,7 @@ import {
   inferServicesFromBusinessName,
   removeCategoryDuplicateServices,
 } from '@/lib/provider-name-service-inference'
+import { getProviderSessionCache, primeProviderSessionCache } from '@/lib/provider-session-cache'
 
 export default function ProviderProfile({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
@@ -192,6 +193,24 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         }
       : null
 
+  const syncProviderSessionCache = ({
+    placeId,
+    providerSnapshot,
+    liveDetailsSnapshot,
+    reviewsSnapshot,
+  }: {
+    placeId: string
+    providerSnapshot?: any
+    liveDetailsSnapshot?: any
+    reviewsSnapshot?: any[]
+  }) => {
+    primeProviderSessionCache(placeId, {
+      providerSnapshot,
+      liveDetails: liveDetailsSnapshot,
+      reviewsSnapshot,
+    })
+  }
+
   useEffect(() => {
     fetchData()
   }, [id, isFeaturedProfile, requestedCategory])
@@ -215,6 +234,15 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           googleTypes: liveData.types || [],
           website: website || '',
           phone: liveData.formatted_phone_number || baseProvider.phone,
+          live_place_details: {
+            place_id: liveData.place_id || placeId,
+            name: liveData.name || baseProvider.name,
+            formatted_address: liveData.formatted_address || baseProvider.address,
+            formatted_phone_number: liveData.formatted_phone_number || baseProvider.phone,
+            website: liveData.website || website || '',
+            types: liveData.types || [],
+            photos: Array.isArray(liveData.photos) ? liveData.photos : [],
+          },
         }),
         signal: AbortSignal.timeout(15000),
       })
@@ -234,6 +262,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           setProvider((currentProvider: any) =>
             currentProvider?.google_place_id === placeId ? { ...currentProvider, ...mergedProvider } : mergedProvider
           )
+          syncProviderSessionCache({
+            placeId,
+            providerSnapshot: mergedProvider,
+            liveDetailsSnapshot: liveData,
+          })
 
           const nextStatus = ensureTagsData.analysis_status || getBreedAnalysisStatus(mergedProvider)
           setBreedTagStatus(nextStatus)
@@ -288,9 +321,36 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   }
 
   const fetchData = async () => {
-    setLoading(true)
-    setLoadingMessage('Loading profile...')
-    setBreedTagStatus('loading')
+    const cachedProfile = getProviderSessionCache(id)
+    const cachedProvider = cachedProfile?.providerSnapshot
+    const cachedLiveDetails = cachedProfile?.liveDetails
+    const cachedReviews = cachedProfile?.reviewsSnapshot
+    const hasRenderableCachedProfile = Boolean(cachedProvider)
+
+    if (hasRenderableCachedProfile) {
+      if (cachedProvider) {
+        setProvider(cachedProvider)
+        setBreedTagStatus(getBreedAnalysisStatus(cachedProvider))
+      } else {
+        setBreedTagStatus('loading')
+      }
+
+      if (cachedLiveDetails) {
+        setLiveDetails(cachedLiveDetails)
+      }
+
+      if (cachedReviews) {
+        setReviews(cachedReviews)
+      }
+
+      setLoading(false)
+      setLoadingMessage('Refreshing profile...')
+    } else {
+      setLoading(true)
+      setLoadingMessage('Loading profile...')
+      setBreedTagStatus('loading')
+    }
+
     supabase.auth
       .getUser()
       .then(({ data: { user } }) => {
@@ -303,27 +363,36 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     // Since 'id' is now the Google Place ID from the search page
     // 1. Fetch live details from Google Places first
     try {
-      const detailsUrl = `/api/providers/${encodeURIComponent(id)}/live-details?include_ai_summary=1`
-      let res: Response | null = null
-      try {
-        res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
-      } catch (error: any) {
-        if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-          console.warn('[provider-page] live details timed out', { id, detailsUrl })
-        } else {
-          throw error
+      let data: any = cachedLiveDetails ? { ...cachedLiveDetails } : {}
+      let canonicalPlaceId =
+        typeof data.place_id === 'string' && data.place_id ? data.place_id : id
+
+      if (!cachedLiveDetails) {
+        const detailsUrl = `/api/providers/${encodeURIComponent(id)}/live-details?include_ai_summary=1`
+        let res: Response | null = null
+        try {
+          res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
+        } catch (error: any) {
+          if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+            console.warn('[provider-page] live details timed out', { id, detailsUrl })
+          } else {
+            throw error
+          }
         }
-      }
-      let data: any = {}
 
-      if (res && res.headers.get('content-type')?.includes('application/json')) {
-        data = await res.json()
-      }
+        if (res && res.headers.get('content-type')?.includes('application/json')) {
+          data = await res.json()
+        }
 
-      const canonicalPlaceId = typeof data.place_id === 'string' && data.place_id ? data.place_id : id
+        canonicalPlaceId = typeof data.place_id === 'string' && data.place_id ? data.place_id : id
 
-      if (res?.ok && !data.error) {
-        setLiveDetails(data)
+        if (res?.ok && !data.error) {
+          setLiveDetails(data)
+          syncProviderSessionCache({
+            placeId: canonicalPlaceId,
+            liveDetailsSnapshot: data,
+          })
+        }
       }
 
       // 2. Fetch our DB data (using google_place_id)
@@ -403,7 +472,13 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         setBreedTagStatus(currentAnalysisStatus)
       }
       setProvider(resolvedProvider)
+      syncProviderSessionCache({
+        placeId: canonicalPlaceId,
+        providerSnapshot: resolvedProvider,
+        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails,
+      })
 
+      let resolvedReviews: any[] = []
       if (resolvedProvider.id !== id) {
         // Fetch native pf_reviews using our internal DB ID
         const { data: revs } = await supabase
@@ -425,15 +500,21 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           reviewerMap = new Map((reviewerRows || []).map((row: any) => [row.id, { full_name: row.full_name }]))
         }
 
-        setReviews(
-          reviewRows.map((review: any) => ({
+        resolvedReviews = reviewRows.map((review: any) => ({
             ...review,
             pf_profiles: reviewerMap.get(review.user_id) || null,
           }))
-        )
+        setReviews(resolvedReviews)
       } else {
         setReviews([])
       }
+
+      syncProviderSessionCache({
+        placeId: canonicalPlaceId,
+        providerSnapshot: resolvedProvider,
+        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails,
+        reviewsSnapshot: resolvedProvider.id !== id ? resolvedReviews : [],
+      })
     } catch (error) {
       console.error(error)
       setBreedTagStatus('unavailable')

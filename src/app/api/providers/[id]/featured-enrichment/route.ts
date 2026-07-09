@@ -61,7 +61,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     const resolvedDetails = await resolvePlaceDetailsWithAutoHeal({
       requestedPlaceId: id,
-      fields: 'place_id,name,photos,reviews,rating,user_ratings_total',
+      fields:
+        'place_id,name,formatted_address,formatted_phone_number,website,photos,reviews,rating,user_ratings_total,opening_hours,types',
       googleApiKey: key,
       provider,
       supabase: supabaseAdmin,
@@ -80,11 +81,25 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       relative_time_description: review.relative_time_description,
     }))
     const aiSummary = await summarizeReviewsWithDeepSeek(result.name || 'this business', reviews)
+    const liveDetailsSnapshot = {
+      place_id: result.place_id || id,
+      name: result.name || provider?.name || null,
+      formatted_address: result.formatted_address || provider?.address || null,
+      formatted_phone_number: result.formatted_phone_number || provider?.phone || null,
+      website: result.website || provider?.website || null,
+      photos: result.photos || [],
+      reviews: result.reviews || [],
+      rating: result.rating ?? null,
+      user_ratings_total: result.user_ratings_total ?? null,
+      opening_hours: result.opening_hours || null,
+      types: result.types || [],
+      ai_summary: aiSummary,
+    }
 
     return NextResponse.json({
-      id: result.place_id || id,
-      google_place_id: result.place_id || id,
-      photo_reference: result.photos?.[0]?.photo_reference || null,
+      id: liveDetailsSnapshot.place_id,
+      google_place_id: liveDetailsSnapshot.place_id,
+      photo_reference: liveDetailsSnapshot.photos?.[0]?.photo_reference || null,
       google_rating: result.rating
         ? {
             score: result.rating,
@@ -94,6 +109,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         : null,
       ai_summary: aiSummary,
       google_reviews_preview: reviews,
+      live_details: liveDetailsSnapshot,
     })
   } catch (error: any) {
     return NextResponse.json({ error: error.message || 'Failed to fetch featured enrichment' }, { status: 500 })

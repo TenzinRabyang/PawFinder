@@ -1,18 +1,21 @@
 'use client'
 
 import { useState, useEffect, Suspense, useRef, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import { removeCategoryDuplicateServices } from '@/lib/provider-name-service-inference'
+import { primeProviderSessionCache } from '@/lib/provider-session-cache'
 
 type FeaturedLoadStatus = 'idle' | 'loading' | 'ready' | 'delayed' | 'error'
 type SortOption = 'distance' | 'rating' | 'review_count'
 
 function SearchContent() {
   const RESULTS_PAGE_SIZE = 5
+  const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   const selectedLat = searchParams.get('lat')
   const selectedLng = searchParams.get('lng')
@@ -34,39 +37,25 @@ function SearchContent() {
   const [error, setError] = useState<string | null>(null)
   const [featuredLoadStatus, setFeaturedLoadStatus] = useState<Record<string, FeaturedLoadStatus>>({})
   const [visibleCount, setVisibleCount] = useState(RESULTS_PAGE_SIZE)
-  const [sortBy, setSortBy] = useState<SortOption>('distance')
   const lastAutoFetchKeyRef = useRef<string | null>(null)
+  const filters = useMemo(
+    () => ({
+      postcode: searchParams.get('postcode') || '',
+      animal: searchParams.get('animal') || '',
+      category: searchParams.get('category') || '',
+      service: searchParams.get('service') || '',
+      breed: searchParams.get('breed') || '',
+    }),
+    [searchParams]
+  )
+  const sortBy = useMemo<SortOption>(() => {
+    const requestedSort = searchParams.get('sort')
 
-  const [filters, setFilters] = useState({
-    postcode: searchParams.get('postcode') || '',
-    animal: searchParams.get('animal') || '',
-    category: searchParams.get('category') || '',
-    service: searchParams.get('service') || '',
-    breed: searchParams.get('breed') || ''
-  })
-
-  useEffect(() => {
-    // When searchParams change (like a new postcode is entered), update filters and fetch
-    const nextFilters = {
-      postcode: searchParams.get('postcode') || filters.postcode,
-      animal: searchParams.get('animal') || filters.animal,
-      category: searchParams.get('category') || filters.category,
-      service: searchParams.get('service') || filters.service,
-      breed: searchParams.get('breed') || filters.breed
+    if (requestedSort === 'rating' || requestedSort === 'review_count' || requestedSort === 'distance') {
+      return requestedSort
     }
-    console.log('[search-page] sync searchParams -> filters', {
-      currentFilters: filters,
-      nextFilters,
-      href: window.location.href,
-    })
-    setFilters(prev => ({
-      ...prev,
-      postcode: searchParams.get('postcode') || prev.postcode,
-      animal: searchParams.get('animal') || prev.animal,
-      category: searchParams.get('category') || prev.category,
-      service: searchParams.get('service') || prev.service,
-      breed: searchParams.get('breed') || prev.breed
-    }))
+
+    return 'distance'
   }, [searchParams])
 
   useEffect(() => {
@@ -108,6 +97,12 @@ function SearchContent() {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load featured details')
       }
+
+      const placeId = data.google_place_id || providerId
+      primeProviderSessionCache(placeId, {
+        featuredEnrichment: data,
+        liveDetails: data.live_details,
+      })
 
       setProviders((prev) =>
         prev.map((provider) => (provider.id === providerId ? { ...provider, ...data } : provider))
@@ -161,6 +156,11 @@ function SearchContent() {
       }
       
       const providers = data.pf_providers || []
+      for (const provider of providers) {
+        primeProviderSessionCache(provider.google_place_id || provider.id, {
+          providerSnapshot: provider,
+        })
+      }
       setProviders(providers)
 
     } catch (err: any) {
@@ -177,9 +177,47 @@ function SearchContent() {
     }
   }
 
-  const handleFilterChange = (key: string, value: string) => {
+  const updateSearchUrl = ({
+    nextFilters = filters,
+    nextSortBy = sortBy,
+  }: {
+    nextFilters?: typeof filters
+    nextSortBy?: SortOption
+  }) => {
+    const nextParams = new URLSearchParams(searchParams.toString())
+
+    for (const [key, value] of Object.entries(nextFilters)) {
+      if (value) {
+        nextParams.set(key, value)
+      } else {
+        nextParams.delete(key)
+      }
+    }
+
+    if (nextSortBy === 'distance') {
+      nextParams.delete('sort')
+    } else {
+      nextParams.set('sort', nextSortBy)
+    }
+
+    const nextQuery = nextParams.toString()
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
+  }
+
+  const handleFilterChange = (key: keyof typeof filters, value: string) => {
     lastAutoFetchKeyRef.current = null
-    setFilters(prev => ({ ...prev, [key]: value }))
+    setVisibleCount(RESULTS_PAGE_SIZE)
+    updateSearchUrl({
+      nextFilters: {
+        ...filters,
+        [key]: value,
+      },
+    })
+  }
+
+  const handleSortChange = (value: SortOption) => {
+    setVisibleCount(RESULTS_PAGE_SIZE)
+    updateSearchUrl({ nextSortBy: value })
   }
 
   const getSortMetrics = (provider: any) => {
@@ -329,10 +367,7 @@ function SearchContent() {
               </label>
               <select
                 value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value as SortOption)
-                  setVisibleCount(RESULTS_PAGE_SIZE)
-                }}
+                onChange={(e) => handleSortChange(e.target.value as SortOption)}
                 className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
               >
                 <option value="distance">Distance</option>

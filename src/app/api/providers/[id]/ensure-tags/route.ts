@@ -48,6 +48,15 @@ type EnsureTagsBody = {
   googleTypes?: string[]
   website?: string
   phone?: string
+  live_place_details?: {
+    place_id?: string
+    name?: string
+    formatted_address?: string
+    formatted_phone_number?: string
+    website?: string
+    types?: string[]
+    photos?: Array<Record<string, unknown>>
+  } | null
 }
 
 function derivePostcode(address?: string) {
@@ -165,37 +174,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   let provider = existing
-  const resolvedPlaceDetails = await resolvePlaceDetailsWithAutoHeal({
-    requestedPlaceId: id,
-    fields: 'place_id,name,formatted_address,formatted_phone_number,website,types,photos',
-    googleApiKey,
-    provider: provider ?? {
-      google_place_id: id,
-      name: body.name,
-      address: body.address,
-      phone: body.phone,
-      website: body.website,
-    },
-    supabase: provider ? supabaseAdmin : undefined,
-    source: 'provider-ensure-tags',
-  })
+  const providedLivePlaceDetails =
+    body.live_place_details && typeof body.live_place_details === 'object' ? body.live_place_details : null
+  const providedCanonicalPlaceId =
+    typeof providedLivePlaceDetails?.place_id === 'string' && providedLivePlaceDetails.place_id.trim()
+      ? providedLivePlaceDetails.place_id.trim()
+      : id
 
-  if (resolvedPlaceDetails.status !== 'OK') {
-    return NextResponse.json({ error: 'Failed to validate provider details before tagging' }, { status: 404 })
-  }
-
-  const canonicalPlaceId = resolvedPlaceDetails.resolvedPlaceId || id
-  const livePlaceResult = resolvedPlaceDetails.result || {}
-
-  if (provider && canonicalPlaceId !== id) {
-    provider = { ...provider, google_place_id: canonicalPlaceId }
-  }
-
-  if (!provider && canonicalPlaceId !== id) {
+  if (!provider && providedLivePlaceDetails && providedCanonicalPlaceId !== id) {
     const { data: canonicalProvider, error: canonicalProviderError } = await supabaseAdmin
       .from('pf_providers')
       .select('*')
-      .eq('google_place_id', canonicalPlaceId)
+      .eq('google_place_id', providedCanonicalPlaceId)
       .maybeSingle()
 
     if (canonicalProviderError) {
@@ -203,6 +193,53 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     provider = canonicalProvider
+  }
+
+  let canonicalPlaceId = providedCanonicalPlaceId
+  let livePlaceResult: Record<string, any> = providedLivePlaceDetails ? { ...providedLivePlaceDetails } : {}
+
+  if (!providedLivePlaceDetails) {
+    const resolvedPlaceDetails = await resolvePlaceDetailsWithAutoHeal({
+      requestedPlaceId: id,
+      fields: 'place_id,name,formatted_address,formatted_phone_number,website,types,photos',
+      googleApiKey,
+      provider: provider ?? {
+        google_place_id: id,
+        name: body.name,
+        address: body.address,
+        phone: body.phone,
+        website: body.website,
+      },
+      supabase: provider ? supabaseAdmin : undefined,
+      source: 'provider-ensure-tags',
+    })
+
+    if (resolvedPlaceDetails.status !== 'OK') {
+      return NextResponse.json({ error: 'Failed to validate provider details before tagging' }, { status: 404 })
+    }
+
+    canonicalPlaceId = resolvedPlaceDetails.resolvedPlaceId || id
+    livePlaceResult = resolvedPlaceDetails.result || {}
+
+    if (provider && canonicalPlaceId !== id) {
+      provider = { ...provider, google_place_id: canonicalPlaceId }
+    }
+
+    if (!provider && canonicalPlaceId !== id) {
+      const { data: canonicalProvider, error: canonicalProviderError } = await supabaseAdmin
+        .from('pf_providers')
+        .select('*')
+        .eq('google_place_id', canonicalPlaceId)
+        .maybeSingle()
+
+      if (canonicalProviderError) {
+        return NextResponse.json({ error: canonicalProviderError.message }, { status: 500 })
+      }
+
+      provider = canonicalProvider
+    }
+  } else if (provider && canonicalPlaceId !== id) {
+    provider = { ...provider, google_place_id: canonicalPlaceId }
   }
 
   const providerSeed = {
