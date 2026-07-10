@@ -149,86 +149,43 @@ function getPhotoInferenceErrorDetails(error: unknown): {
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const supabaseAdmin = createAdminClient()
-  const body = (await request.json().catch(() => ({}))) as EnsureTagsBody
-  const googleApiKey = process.env.GOOGLE_PLACES_API_KEY
+  try {
+    const { id } = await params
+    const supabaseAdmin = createAdminClient()
+    const body = (await request.json().catch(() => ({}))) as EnsureTagsBody
+    const googleApiKey = process.env.GOOGLE_PLACES_API_KEY
 
-  if (!id) {
-    return NextResponse.json({ error: 'Missing provider id' }, { status: 400 })
-  }
+    if (!id) {
+      return NextResponse.json({ error: 'Missing provider id' }, { status: 400 })
+    }
 
-  if (!googleApiKey) {
-    return NextResponse.json({ error: 'Missing Google Places API key' }, { status: 500 })
-  }
+    if (!googleApiKey) {
+      return NextResponse.json({ error: 'Missing Google Places API key' }, { status: 500 })
+    }
 
-  const { data: existing, error: existingError } = await supabaseAdmin
-    .from('pf_providers')
-    .select('*')
-    .eq('google_place_id', id)
-    .maybeSingle()
-
-  if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 })
-  }
-
-  let provider = existing
-  const providedLivePlaceDetails =
-    body.live_place_details && typeof body.live_place_details === 'object' ? body.live_place_details : null
-  const providedCanonicalPlaceId =
-    typeof providedLivePlaceDetails?.place_id === 'string' && providedLivePlaceDetails.place_id.trim()
-      ? providedLivePlaceDetails.place_id.trim()
-      : id
-
-  if (!provider && providedLivePlaceDetails && providedCanonicalPlaceId !== id) {
-    const { data: canonicalProvider, error: canonicalProviderError } = await supabaseAdmin
+    const { data: existing, error: existingError } = await supabaseAdmin
       .from('pf_providers')
       .select('*')
-      .eq('google_place_id', providedCanonicalPlaceId)
+      .eq('google_place_id', id)
       .maybeSingle()
 
-    if (canonicalProviderError) {
-      return NextResponse.json({ error: canonicalProviderError.message }, { status: 500 })
+    if (existingError) {
+      return NextResponse.json({ error: existingError.message }, { status: 500 })
     }
 
-    provider = canonicalProvider
-  }
+    let provider = existing
+    const providedLivePlaceDetails =
+      body.live_place_details && typeof body.live_place_details === 'object' ? body.live_place_details : null
+    const providedCanonicalPlaceId =
+      typeof providedLivePlaceDetails?.place_id === 'string' && providedLivePlaceDetails.place_id.trim()
+        ? providedLivePlaceDetails.place_id.trim()
+        : id
 
-  let canonicalPlaceId = providedCanonicalPlaceId
-  let livePlaceResult: Record<string, any> = providedLivePlaceDetails ? { ...providedLivePlaceDetails } : {}
-
-  if (!providedLivePlaceDetails) {
-    const resolvedPlaceDetails = await resolvePlaceDetailsWithAutoHeal({
-      requestedPlaceId: id,
-      fields: 'place_id,name,formatted_address,formatted_phone_number,website,types,photos',
-      googleApiKey,
-      provider: provider ?? {
-        google_place_id: id,
-        name: body.name,
-        address: body.address,
-        phone: body.phone,
-        website: body.website,
-      },
-      supabase: provider ? supabaseAdmin : undefined,
-      source: 'provider-ensure-tags',
-    })
-
-    if (resolvedPlaceDetails.status !== 'OK') {
-      return NextResponse.json({ error: 'Failed to validate provider details before tagging' }, { status: 404 })
-    }
-
-    canonicalPlaceId = resolvedPlaceDetails.resolvedPlaceId || id
-    livePlaceResult = resolvedPlaceDetails.result || {}
-
-    if (provider && canonicalPlaceId !== id) {
-      provider = { ...provider, google_place_id: canonicalPlaceId }
-    }
-
-    if (!provider && canonicalPlaceId !== id) {
+    if (!provider && providedLivePlaceDetails && providedCanonicalPlaceId !== id) {
       const { data: canonicalProvider, error: canonicalProviderError } = await supabaseAdmin
         .from('pf_providers')
         .select('*')
-        .eq('google_place_id', canonicalPlaceId)
+        .eq('google_place_id', providedCanonicalPlaceId)
         .maybeSingle()
 
       if (canonicalProviderError) {
@@ -237,22 +194,66 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       provider = canonicalProvider
     }
-  } else if (provider && canonicalPlaceId !== id) {
-    provider = { ...provider, google_place_id: canonicalPlaceId }
-  }
 
-  const providerSeed = {
-    ...body,
-    name: livePlaceResult.name || body.name,
-    address: livePlaceResult.formatted_address || body.address,
-    website: livePlaceResult.website || body.website,
-    phone: livePlaceResult.formatted_phone_number || body.phone,
-    googleTypes:
-      Array.isArray(body.googleTypes) && body.googleTypes.length > 0 ? body.googleTypes : livePlaceResult.types || [],
-  }
+    let canonicalPlaceId = providedCanonicalPlaceId
+    let livePlaceResult: Record<string, unknown> = providedLivePlaceDetails ? { ...providedLivePlaceDetails } : {}
 
-  const ephemeralProvider = buildEphemeralProvider(canonicalPlaceId, providerSeed)
-  const analysisSourceProvider = () => provider ?? ephemeralProvider
+    if (!providedLivePlaceDetails) {
+      const resolvedPlaceDetails = await resolvePlaceDetailsWithAutoHeal({
+        requestedPlaceId: id,
+        fields: 'place_id,name,formatted_address,formatted_phone_number,website,types,photos',
+        googleApiKey,
+        provider: provider ?? {
+          google_place_id: id,
+          name: body.name,
+          address: body.address,
+          phone: body.phone,
+          website: body.website,
+        },
+        supabase: provider ? supabaseAdmin : undefined,
+        source: 'provider-ensure-tags',
+      })
+
+      if (resolvedPlaceDetails.status !== 'OK') {
+        return NextResponse.json({ error: 'Failed to validate provider details before tagging' }, { status: 404 })
+      }
+
+      canonicalPlaceId = resolvedPlaceDetails.resolvedPlaceId || id
+      livePlaceResult = resolvedPlaceDetails.result || {}
+
+      if (provider && canonicalPlaceId !== id) {
+        provider = { ...provider, google_place_id: canonicalPlaceId }
+      }
+
+      if (!provider && canonicalPlaceId !== id) {
+        const { data: canonicalProvider, error: canonicalProviderError } = await supabaseAdmin
+          .from('pf_providers')
+          .select('*')
+          .eq('google_place_id', canonicalPlaceId)
+          .maybeSingle()
+
+        if (canonicalProviderError) {
+          return NextResponse.json({ error: canonicalProviderError.message }, { status: 500 })
+        }
+
+        provider = canonicalProvider
+      }
+    } else if (provider && canonicalPlaceId !== id) {
+      provider = { ...provider, google_place_id: canonicalPlaceId }
+    }
+
+    const providerSeed = {
+      ...body,
+      name: livePlaceResult.name || body.name,
+      address: livePlaceResult.formatted_address || body.address,
+      website: livePlaceResult.website || body.website,
+      phone: livePlaceResult.formatted_phone_number || body.phone,
+      googleTypes:
+        Array.isArray(body.googleTypes) && body.googleTypes.length > 0 ? body.googleTypes : livePlaceResult.types || [],
+    }
+
+    const ephemeralProvider = buildEphemeralProvider(canonicalPlaceId, providerSeed)
+    const analysisSourceProvider = () => provider ?? ephemeralProvider
 
   if (!provider) {
     const resolvedCategory = resolvePersistableProviderCategory({
@@ -614,9 +615,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
   }
 
-  try {
-    const { normalizedWebsite, pagesAnalysed, pagesAttempted, pagesFetched, aiTags, skippedLowContent, bookingAnalysis } =
-      await tagProviderWebsite(websiteToAnalyze)
+    try {
+      const { normalizedWebsite, pagesAnalysed, pagesAttempted, pagesFetched, aiTags, skippedLowContent, bookingAnalysis } =
+        await tagProviderWebsite(websiteToAnalyze)
     const normalizedConfirmedServices = removeCategoryDuplicateServices({
       category: providerCategory,
       services: aiTags.services,
@@ -771,78 +772,82 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ai_tagging_skipped_low_content: skippedLowContent,
       booking_detection_source: bookingAnalysis.detectionSource,
     })
-  } catch (error) {
-    if (error instanceof WebsiteFetchError && error.reason === 'fetch_blocked') {
-      if (!provider) {
-        return NextResponse.json({
-          provider: {
-            ...ephemeralProvider,
+    } catch (error) {
+      if (error instanceof WebsiteFetchError && error.reason === 'fetch_blocked') {
+        if (!provider) {
+          return NextResponse.json({
+            provider: {
+              ...ephemeralProvider,
+              website: websiteToAnalyze,
+              services_inferred_from_name: inferServicesFromBusinessName({
+                name: providerName,
+                category: providerCategory,
+                confirmedServices: [],
+              }),
+              ai_tagging_skipped_low_content: true,
+            },
+            source: 'database',
+            analysis_status: 'fetch_blocked',
+            analysis_error_reason: 'website_fetch_blocked',
+          })
+        }
+
+        const persistence = getBreedAnalysisPersistence(provider, {
+          animals_served: [],
+          services: [],
+          breeds_specialised: [],
+          breeds_general_inferred: [],
+        })
+
+        const { data: blockedProvider, error: blockedUpdateError } = await supabaseAdmin
+          .from('pf_providers')
+          .update({
             website: websiteToAnalyze,
+            ai_tagging_skipped_low_content: true,
             services_inferred_from_name: inferServicesFromBusinessName({
               name: providerName,
               category: providerCategory,
-              confirmedServices: [],
+              confirmedServices: provider?.services || [],
             }),
-            ai_tagging_skipped_low_content: true,
-          },
+            tagging_attempt_count: persistence.taggingAttemptCount,
+            breed_analysis_exhausted: persistence.breedAnalysisExhausted,
+          })
+          .eq('id', provider.id)
+          .select('*')
+          .single()
+
+        if (blockedUpdateError && !isMissingInferredServicesColumnError(blockedUpdateError)) {
+          console.error('[ensure-tags] failed to persist blocked website fetch status', {
+            providerId: provider.id,
+            error: blockedUpdateError,
+          })
+          return NextResponse.json({ error: blockedUpdateError.message }, { status: 500 })
+        }
+
+        return NextResponse.json({
+          provider: blockedProvider
+            ? blockedProvider
+            : {
+                ...provider,
+                website: websiteToAnalyze,
+                services_inferred_from_name: inferServicesFromBusinessName({
+                  name: providerName,
+                  category: providerCategory,
+                  confirmedServices: provider?.services || [],
+                }),
+                ai_tagging_skipped_low_content: true,
+              },
           source: 'database',
           analysis_status: 'fetch_blocked',
           analysis_error_reason: 'website_fetch_blocked',
         })
       }
 
-      const persistence = getBreedAnalysisPersistence(provider, {
-        animals_served: [],
-        services: [],
-        breeds_specialised: [],
-        breeds_general_inferred: [],
-      })
-
-      const { data: blockedProvider, error: blockedUpdateError } = await supabaseAdmin
-        .from('pf_providers')
-        .update({
-          website: websiteToAnalyze,
-          ai_tagging_skipped_low_content: true,
-          services_inferred_from_name: inferServicesFromBusinessName({
-            name: providerName,
-            category: providerCategory,
-            confirmedServices: provider?.services || [],
-          }),
-          tagging_attempt_count: persistence.taggingAttemptCount,
-          breed_analysis_exhausted: persistence.breedAnalysisExhausted,
-        })
-        .eq('id', provider.id)
-        .select('*')
-        .single()
-
-      if (blockedUpdateError && !isMissingInferredServicesColumnError(blockedUpdateError)) {
-        console.error('[ensure-tags] failed to persist blocked website fetch status', {
-          providerId: provider.id,
-          error: blockedUpdateError,
-        })
-        return NextResponse.json({ error: blockedUpdateError.message }, { status: 500 })
-      }
-
-      return NextResponse.json({
-        provider: blockedProvider
-          ? blockedProvider
-          : {
-              ...provider,
-              website: websiteToAnalyze,
-              services_inferred_from_name: inferServicesFromBusinessName({
-                name: providerName,
-                category: providerCategory,
-                confirmedServices: provider?.services || [],
-              }),
-              ai_tagging_skipped_low_content: true,
-            },
-        source: 'database',
-        analysis_status: 'fetch_blocked',
-        analysis_error_reason: 'website_fetch_blocked',
-      })
+      console.error('[ensure-tags] failed to ensure provider tags', error)
+      return NextResponse.json({ error: 'Provider website analysis failed' }, { status: 500 })
     }
-
-    console.error('[ensure-tags] failed to ensure provider tags', error)
-    return NextResponse.json({ error: 'Provider website analysis failed' }, { status: 500 })
+  } catch (error) {
+    console.error('[ensure-tags] unexpected failure', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

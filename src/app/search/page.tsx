@@ -313,7 +313,7 @@ function SearchContent() {
     if (!featuredProvider?.id) return
 
     const status = featuredLoadStatus[featuredProvider.id]
-    if (status === 'loading' || status === 'ready') return
+    if ((status || 'idle') !== 'idle') return
 
     const timeoutId = window.setTimeout(() => {
       void fetchFeaturedEnrichment(featuredProvider.id)
