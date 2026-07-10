@@ -1,8 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { createClient } from '@/utils/supabase/server'
 
 export async function POST(request: Request, { params }: { params: Promise<{ providerId: string }> }) {
   const { providerId } = await params
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const supabaseAdmin = createAdminClient()
 
   // Fetch all pf_reviews for this provider

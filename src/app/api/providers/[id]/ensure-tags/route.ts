@@ -242,14 +242,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       provider = { ...provider, google_place_id: canonicalPlaceId }
     }
 
-    const providerSeed = {
+    const providerSeed: EnsureTagsBody = {
       ...body,
-      name: livePlaceResult.name || body.name,
-      address: livePlaceResult.formatted_address || body.address,
-      website: livePlaceResult.website || body.website,
-      phone: livePlaceResult.formatted_phone_number || body.phone,
+      name: typeof livePlaceResult.name === 'string' ? livePlaceResult.name : body.name,
+      address: typeof livePlaceResult.formatted_address === 'string' ? livePlaceResult.formatted_address : body.address,
+      website: typeof livePlaceResult.website === 'string' ? livePlaceResult.website : body.website,
+      phone:
+        typeof livePlaceResult.formatted_phone_number === 'string'
+          ? livePlaceResult.formatted_phone_number
+          : body.phone,
       googleTypes:
-        Array.isArray(body.googleTypes) && body.googleTypes.length > 0 ? body.googleTypes : livePlaceResult.types || [],
+        Array.isArray(body.googleTypes) && body.googleTypes.length > 0
+          ? body.googleTypes
+          : Array.isArray(livePlaceResult.types)
+            ? livePlaceResult.types.filter((type): type is string => typeof type === 'string')
+            : [],
     }
 
     const ephemeralProvider = buildEphemeralProvider(canonicalPlaceId, providerSeed)

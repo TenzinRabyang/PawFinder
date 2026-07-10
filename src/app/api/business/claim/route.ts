@@ -65,6 +65,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: existingError.message }, { status: 500 })
     }
 
+    if (existing?.is_claimed) {
+      return NextResponse.json({ error: 'This business has already been claimed' }, { status: 400 })
+    }
+
     let providerId = existing?.id
 
     // 2. Insert or update the provider
@@ -119,16 +123,21 @@ export async function POST(request: Request) {
     }
 
     // 3. Link provider to user profile
-    const { error: profileError } = await supabaseAdmin
+    const { data: updatedProfile, error: profileError } = await supabaseAdmin
       .from('pf_profiles')
       .update({
         is_business_owner: true,
         owned_provider_id: providerId
       })
       .eq('id', user.id)
+      .select('id')
+      .single()
 
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 500 })
+    if (profileError || updatedProfile?.id !== user.id) {
+      return NextResponse.json(
+        { error: profileError?.message || 'Failed to update the authenticated user profile' },
+        { status: 500 }
+      )
     }
 
     const { error: claimFlagError } = await supabaseAdmin.from('pf_providers').update({ is_claimed: true }).eq('id', providerId)
