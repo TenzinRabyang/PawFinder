@@ -12,19 +12,22 @@ import {
 } from "lucide-react";
 import EditorialPhoto from "@/components/home/EditorialPhoto";
 import HomeSearchCard from "@/components/home/HomeSearchCard";
-import { createClient } from "@/utils/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type HomeStat = {
-  value: number;
-  label: string;
-};
-
-const homepageStats: Array<{ key: "providers" | "reviews" | "bookings"; label: string }> = [
-  { key: "providers", label: "Local providers" },
-  { key: "reviews", label: "Verified reviews" },
-  { key: "bookings", label: "Online booking options" },
+const homepageValueCards = [
+  {
+    title: "UK-Wide Coverage",
+    description: "Powered by live Google data to find services anywhere.",
+  },
+  {
+    title: "Breed-Specific",
+    description: "Filter reviews written by owners of your exact breed.",
+  },
+  {
+    title: "Temperament Filtering",
+    description: "Find the perfect match for your pet's unique personality.",
+  },
 ];
 
 const petCategories = [
@@ -83,41 +86,7 @@ const serviceCards = [
   },
 ];
 
-async function getHomepageStats(): Promise<HomeStat[]> {
-  const supabase = await createClient();
-  const [providerCount, reviewCount, bookingCount] = await Promise.all([
-    supabase.from("pf_providers").select("id", { count: "exact", head: true }),
-    supabase.from("pf_reviews").select("id", { count: "exact", head: true }),
-    supabase.from("pf_providers").select("id", { count: "exact", head: true }).eq("has_online_booking", true),
-  ]);
-
-  if (providerCount.error) {
-    console.error("[homepage] failed to load provider count", providerCount.error.message);
-  }
-
-  if (reviewCount.error) {
-    console.error("[homepage] failed to load review count", reviewCount.error.message);
-  }
-
-  if (bookingCount.error) {
-    console.error("[homepage] failed to load booking count", bookingCount.error.message);
-  }
-
-  const values = {
-    providers: providerCount.count ?? 0,
-    reviews: reviewCount.count ?? 0,
-    bookings: bookingCount.count ?? 0,
-  };
-
-  return homepageStats.map((stat) => ({
-    value: values[stat.key],
-    label: stat.label,
-  }));
-}
-
 export default async function Home() {
-  const stats = await getHomepageStats();
-
   return (
     <div className="min-h-screen overflow-hidden bg-[#FAF7F1] text-[#20261F]">
       <section className="relative overflow-hidden pb-16 pt-10 sm:pb-20 sm:pt-14">
@@ -174,12 +143,15 @@ export default async function Home() {
 
             <div className="mx-auto mt-6 max-w-3xl rounded-[1.7rem] border border-[#DCD3BE] bg-white/80 p-3 shadow-[0_16px_36px_-28px_rgba(32,38,31,0.35)] backdrop-blur">
               <div className="grid gap-2 sm:grid-cols-3">
-                {stats.map((stat) => (
-                  <div key={stat.label} className="rounded-[1.25rem] border border-transparent px-4 py-4 text-center sm:border-[#EEE7D6] sm:bg-[#FFFDFC]">
-                    <div className="font-display text-3xl tracking-[-0.04em] text-[#20261F]">
-                      {stat.value.toLocaleString("en-GB")}
+                {homepageValueCards.map((card) => (
+                  <div
+                    key={card.title}
+                    className="rounded-[1.25rem] border border-transparent px-4 py-4 text-center sm:border-[#EEE7D6] sm:bg-[#FFFDFC]"
+                  >
+                    <div className="font-display text-[1.45rem] leading-tight tracking-[-0.035em] text-[#20261F]">
+                      {card.title}
                     </div>
-                    <div className="mt-1 text-sm text-[#4A5147]">{stat.label}</div>
+                    <div className="mt-2 text-sm leading-6 text-[#4A5147]">{card.description}</div>
                   </div>
                 ))}
               </div>
