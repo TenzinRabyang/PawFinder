@@ -135,10 +135,9 @@ export default async function Home() {
               <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#4A5147] sm:text-lg">
                 Search trusted vets, groomers, walkers, and sitters near you, with the kind of owner context that makes decisions easier.
               </p>
-            </div>
-
-            <div className="mx-auto mt-8 max-w-2xl">
-              <HomeSearchCard />
+              <div className="mx-auto mt-10 max-w-2xl">
+                <HomeSearchCard />
+              </div>
             </div>
 
             <div className="mx-auto mt-6 max-w-3xl rounded-[1.7rem] border border-[#DCD3BE] bg-white/80 p-3 shadow-[0_16px_36px_-28px_rgba(32,38,31,0.35)] backdrop-blur">
