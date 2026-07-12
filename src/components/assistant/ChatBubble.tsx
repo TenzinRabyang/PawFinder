@@ -4,10 +4,25 @@ import { PawPrint, SendHorizontal, Sparkles, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import LocationSearchControl, {
+  type LocationSearchContext,
+} from "@/components/location/LocationSearchControl";
+
 type ChatMessage = {
   id: string;
   role: "assistant" | "user";
   content: string;
+};
+
+type AssistantApiResponse = {
+  reply?: string;
+  error?: string;
+  needs_location?: boolean;
+};
+
+type StoredChatSession = {
+  timestamp: number;
+  messages: ChatMessage[];
 };
 
 const INITIAL_MESSAGES: ChatMessage[] = [
@@ -19,14 +34,120 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   },
 ];
 
+const ASSISTANT_LOCATION_SESSION_KEY = "pawfinder:assistant-location-context";
+const CHAT_SESSION_STORAGE_KEY = "pawfinder_chat_session";
+const CHAT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15000;
+const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try again.";
+const DUPLICATE_MESSAGE_WARNING =
+  "It looks like you've sent the same question! Please try rephrasing or asking something new.";
+
+function isValidChatMessageArray(value: unknown): value is ChatMessage[] {
+  return Array.isArray(value) && value.every((message) => {
+    if (!message || typeof message !== "object") return false;
+
+    const candidate = message as Partial<ChatMessage>;
+    return (
+      (candidate.role === "assistant" || candidate.role === "user") &&
+      typeof candidate.id === "string" &&
+      typeof candidate.content === "string"
+    );
+  });
+}
+
+function getInitialMessages() {
+  if (typeof window === "undefined") {
+    return INITIAL_MESSAGES;
+  }
+
+  const rawSession = window.localStorage.getItem(CHAT_SESSION_STORAGE_KEY);
+
+  if (!rawSession) {
+    return INITIAL_MESSAGES;
+  }
+
+  try {
+    const parsed = JSON.parse(rawSession) as Partial<StoredChatSession>;
+
+    if (
+      typeof parsed.timestamp !== "number" ||
+      Date.now() - parsed.timestamp > CHAT_SESSION_TTL_MS ||
+      !isValidChatMessageArray(parsed.messages)
+    ) {
+      window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+      return INITIAL_MESSAGES;
+    }
+
+    return parsed.messages.length > 0 ? parsed.messages : INITIAL_MESSAGES;
+  } catch {
+    window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+    return INITIAL_MESSAGES;
+  }
+}
+
+function isValidLocationContext(value: unknown): value is LocationSearchContext {
+  if (!value || typeof value !== "object") return false;
+
+  const candidate = value as Partial<LocationSearchContext>;
+
+  if (candidate.kind === "postcode") {
+    return typeof candidate.label === "string" && typeof candidate.postcode === "string";
+  }
+
+  if (candidate.kind === "place") {
+    return (
+      typeof candidate.label === "string" &&
+      typeof candidate.place_id === "string" &&
+      typeof candidate.lat === "number" &&
+      typeof candidate.lng === "number"
+    );
+  }
+
+  return false;
+}
+
+function getLocationContextFromSearchParams(
+  searchParams: ReturnType<typeof useSearchParams>
+): LocationSearchContext | null {
+  const postcode = searchParams.get("postcode")?.trim();
+
+  if (postcode) {
+    return {
+      kind: "postcode",
+      label: postcode,
+      postcode,
+    };
+  }
+
+  const location = searchParams.get("location")?.trim();
+  const lat = Number(searchParams.get("lat"));
+  const lng = Number(searchParams.get("lng"));
+
+  if (location && Number.isFinite(lat) && Number.isFinite(lng)) {
+    return {
+      kind: "place",
+      label: location,
+      place_id: `search-${location}-${lat}-${lng}`,
+      lat,
+      lng,
+    };
+  }
+
+  return null;
+}
+
 export default function ChatBubble() {
   const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>(getInitialMessages);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCollectingLocation, setIsCollectingLocation] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const currentPostcode = searchParams.get("postcode")?.trim() || null;
+  const urlLocationContext = useMemo(
+    () => getLocationContextFromSearchParams(searchParams),
+    [searchParams]
+  );
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -39,15 +160,148 @@ export default function ChatBubble() {
     });
   }, [isLoading, isOpen, messages]);
 
+  useEffect(() => {
+    if (!urlLocationContext) return;
+
+    window.sessionStorage.setItem(
+      ASSISTANT_LOCATION_SESSION_KEY,
+      JSON.stringify(urlLocationContext)
+    );
+  }, [urlLocationContext]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const payload: StoredChatSession = {
+      timestamp: Date.now(),
+      messages,
+    };
+
+    window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  }, [messages]);
+
+  const activeLocationContext = (() => {
+    if (urlLocationContext) {
+      return urlLocationContext;
+    }
+
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    const storedContext = window.sessionStorage.getItem(ASSISTANT_LOCATION_SESSION_KEY);
+
+    if (!storedContext) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(storedContext);
+      return isValidLocationContext(parsed) ? parsed : null;
+    } catch {
+      window.sessionStorage.removeItem(ASSISTANT_LOCATION_SESSION_KEY);
+      return null;
+    }
+  })();
+
   const messageCountLabel = useMemo(() => {
     const count = messages.length;
     return count === 1 ? "1 note" : `${count} notes`;
   }, [messages.length]);
 
+  const activeLocationLabel = useMemo(() => {
+    if (!activeLocationContext) return null;
+
+    return activeLocationContext.kind === "postcode"
+      ? `Using postcode ${activeLocationContext.postcode}`
+      : `Using area ${activeLocationContext.label}`;
+  }, [activeLocationContext]);
+
+  const sendConversation = async (
+    conversationMessages: ChatMessage[],
+    nextLocationContext: LocationSearchContext | null
+  ) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const locationPayload =
+      nextLocationContext?.kind === "postcode"
+        ? { postcode: nextLocationContext.postcode }
+        : nextLocationContext
+          ? {
+              location: nextLocationContext.label,
+              lat: nextLocationContext.lat,
+              lng: nextLocationContext.lng,
+            }
+          : {};
+
+    try {
+      const response = await fetch("/api/assistant/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          messages: conversationMessages
+            .slice(-10)
+            .map(({ role, content }) => ({ role, content })),
+          ...locationPayload,
+        }),
+      });
+
+      const payload = ((await response.json().catch(() => ({}))) || {}) as AssistantApiResponse;
+
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error === "string" ? payload.error : "The assistant could not answer just now."
+        );
+      }
+
+      const reply =
+        typeof payload?.reply === "string" && payload.reply.trim().length > 0
+          ? payload.reply.trim()
+          : "I couldn’t generate a recommendation just now. Please try again.";
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: reply,
+        },
+      ]);
+      setIsCollectingLocation(Boolean(payload.needs_location));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error(TIMEOUT_MESSAGE);
+      }
+
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
   const handleSend = async () => {
     const trimmedDraft = draft.trim();
 
     if (!trimmedDraft || isLoading) return;
+
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+
+    if (lastUserMessage?.content.trim() === trimmedDraft) {
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-duplicate-${Date.now()}`,
+          role: "assistant",
+          content: DUPLICATE_MESSAGE_WARNING,
+        },
+      ]);
+      setDraft("");
+      setIsOpen(true);
+      return;
+    }
 
     const timestamp = Date.now();
     const nextMessages = [
@@ -65,39 +319,7 @@ export default function ChatBubble() {
 
     try {
       setIsLoading(true);
-
-      const response = await fetch("/api/assistant/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: nextMessages.map(({ role, content }) => ({ role, content })),
-          postcode: currentPostcode || undefined,
-        }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          typeof payload?.error === "string" ? payload.error : "The assistant could not answer just now."
-        );
-      }
-
-      const reply =
-        typeof payload?.reply === "string" && payload.reply.trim().length > 0
-          ? payload.reply.trim()
-          : "I couldn’t generate a recommendation just now. Please try again.";
-
-      setMessages((currentMessages) => [
-        ...currentMessages,
-        {
-          id: `assistant-${timestamp}`,
-          role: "assistant",
-          content: reply,
-        },
-      ]);
+      await sendConversation(nextMessages, activeLocationContext);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -108,6 +330,51 @@ export default function ChatBubble() {
         ...currentMessages,
         {
           id: `assistant-error-${timestamp}`,
+          role: "assistant",
+          content: errorMessage,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResolvedLocation = async (nextLocationContext: LocationSearchContext) => {
+    const locationMessage: ChatMessage =
+      nextLocationContext.kind === "postcode"
+        ? {
+            id: `user-location-${Date.now()}`,
+            role: "user",
+            content: `My postcode is ${nextLocationContext.postcode}.`,
+          }
+        : {
+            id: `user-location-${Date.now()}`,
+            role: "user",
+            content: `I'm looking around ${nextLocationContext.label}.`,
+          };
+
+    const nextMessages = [...messages, locationMessage];
+
+    window.sessionStorage.setItem(
+      ASSISTANT_LOCATION_SESSION_KEY,
+      JSON.stringify(nextLocationContext)
+    );
+    setMessages(nextMessages);
+
+    try {
+      setIsLoading(true);
+      setIsCollectingLocation(false);
+      await sendConversation(nextMessages, nextLocationContext);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "The assistant hit a temporary problem. Please try again in a moment.";
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-location-error-${Date.now()}`,
           role: "assistant",
           content: errorMessage,
         },
@@ -143,8 +410,11 @@ export default function ChatBubble() {
                   <p className="mt-2 max-w-[18rem] text-sm leading-6 text-[#5B6258]">
                     Ask for specific conditions, e.g., &quot;vets with a quiet waiting area&quot;.
                   </p>
+                  <p className="mt-2 font-sans text-[0.78rem] leading-5 text-[#6C7468]">
+                    History saved on device for 24 hours.
+                  </p>
                   <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#7B8278]">
-                    {currentPostcode ? `Using postcode ${currentPostcode}` : "Add a postcode to unlock local matches"}
+                    {activeLocationLabel || "Ask first, then add your postcode or city when needed"}
                   </p>
                 </div>
                 <button
@@ -214,39 +484,59 @@ export default function ChatBubble() {
               ) : null}
             </div>
 
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                handleSend();
-              }}
-              className="border-t border-[#E9E0D1] bg-[#FFFDFC] p-4"
-            >
-              <div className="flex items-end gap-3">
-                <label htmlFor="pawfinder-assistant-input" className="sr-only">
-                  Ask the PawFinder Assistant
-                </label>
-                <div className="relative flex-1">
-                  <input
-                    id="pawfinder-assistant-input"
-                    type="text"
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    placeholder="Describe the care you need..."
+            <div className="border-t border-[#E9E0D1] bg-[#FFFDFC] p-4">
+              {isCollectingLocation ? (
+                <div className="rounded-[1.35rem] border border-[#E6DECD] bg-[#FFFCF8] p-3 shadow-[0_18px_34px_-28px_rgba(32,38,31,0.25)]">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#8C5B4D]">
+                    Add your postcode or city
+                  </p>
+                  <LocationSearchControl
+                    key={activeLocationContext?.label || "assistant-location-control"}
+                    id="assistant-location"
+                    label="Location for nearby matches"
+                    submitLabel="Use this location"
+                    variant="assistant"
+                    autoSubmitOnSelect
                     disabled={isLoading}
-                    className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
+                    initialQuery={activeLocationContext?.label || ""}
+                    onResolved={handleResolvedLocation}
                   />
-                  <PawPrint className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#B14A2B]" />
                 </div>
-                <button
-                  type="submit"
-                  disabled={!draft.trim() || isLoading}
-                  className="inline-flex h-12 items-center gap-2 rounded-[1.1rem] bg-[#B14A2B] px-4 text-sm font-semibold text-[#FFF8F2] shadow-[0_18px_34px_-22px_rgba(177,74,43,0.8)] transition hover:bg-[#973D24] disabled:cursor-not-allowed disabled:bg-[#CFA393] disabled:shadow-none"
+              ) : (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSend();
+                  }}
                 >
-                  <span>Send</span>
-                  <SendHorizontal className="h-4 w-4" />
-                </button>
-              </div>
-            </form>
+                  <div className="flex items-end gap-3">
+                    <label htmlFor="pawfinder-assistant-input" className="sr-only">
+                      Ask the PawFinder Assistant
+                    </label>
+                    <div className="relative flex-1">
+                      <input
+                        id="pawfinder-assistant-input"
+                        type="text"
+                        value={draft}
+                        onChange={(event) => setDraft(event.target.value)}
+                        placeholder="Describe the care you need..."
+                        disabled={isLoading}
+                        className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
+                      />
+                      <PawPrint className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#B14A2B]" />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!draft.trim() || isLoading}
+                      className="inline-flex h-12 items-center gap-2 rounded-[1.1rem] bg-[#B14A2B] px-4 text-sm font-semibold text-[#FFF8F2] shadow-[0_18px_34px_-22px_rgba(177,74,43,0.8)] transition hover:bg-[#973D24] disabled:cursor-not-allowed disabled:bg-[#CFA393] disabled:shadow-none"
+                    >
+                      <span>Send</span>
+                      <SendHorizontal className="h-4 w-4" />
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </section>
         ) : null}
 

@@ -43,8 +43,37 @@ type AssistantProvider = {
   breed_tags: string[]
 }
 
+type AssistantLocationContext = {
+  postcode: string | null
+  location: string | null
+  lat: number | null
+  lng: number | null
+}
+
 const MAX_MESSAGE_COUNT = 12
-const MAX_MESSAGE_LENGTH = 1200
+const MAX_MESSAGE_LENGTH = 1000
+const SAFE_ASSISTANT_ERROR =
+  'Our assistant is currently taking a quick nap. Please try again in a moment!'
+const OFF_TOPIC_REJECTION_MESSAGE =
+  'I am your PawFinder assistant and can only help with pet care queries and local UK business matching. How can I help you find a pet service today?'
+const OBVIOUS_PROGRAMMATIC_PATTERNS = [
+  /\bfunction\s*\(/i,
+  /\bimport\s+react\b/i,
+  /\bwrite(?:\s+me)?\s+a\s+python\s+script\b/i,
+  /\bconsole\.log\b/i,
+  /\bfrom\s+['"]react['"]/i,
+]
+
+class AssistantRouteError extends Error {
+  status: number
+  exposeMessage: boolean
+
+  constructor(message: string, status = 500, exposeMessage = false) {
+    super(message)
+    this.status = status
+    this.exposeMessage = exposeMessage
+  }
+}
 
 function normalizePostcode(postcode: string) {
   return postcode.trim().toUpperCase().replace(/\s+/g, '')
@@ -84,9 +113,68 @@ function normalizeMessages(input: unknown): AssistantChatMessage[] {
     }))
 }
 
+function validateIncomingMessages(input: unknown) {
+  if (!Array.isArray(input)) {
+    throw new AssistantRouteError('Messages must be provided as an array.', 400, true)
+  }
+
+  if (input.length > MAX_MESSAGE_COUNT) {
+    throw new AssistantRouteError(
+      `Message history cannot exceed ${MAX_MESSAGE_COUNT} items.`,
+      400,
+      true
+    )
+  }
+
+  for (const message of input) {
+    if (!message || typeof message !== 'object') {
+      throw new AssistantRouteError('Each message must be an object.', 400, true)
+    }
+
+    const content = typeof (message as { content?: unknown }).content === 'string'
+      ? (message as { content: string }).content
+      : null
+
+    if (content === null) {
+      throw new AssistantRouteError('Each message must include text content.', 400, true)
+    }
+
+    if (content.length > MAX_MESSAGE_LENGTH) {
+      throw new AssistantRouteError(
+        `Messages cannot exceed ${MAX_MESSAGE_LENGTH} characters.`,
+        400,
+        true
+      )
+    }
+
+    if (OBVIOUS_PROGRAMMATIC_PATTERNS.some((pattern) => pattern.test(content))) {
+      throw new AssistantRouteError(OFF_TOPIC_REJECTION_MESSAGE, 400, true)
+    }
+  }
+}
+
 async function fetchNearbyProviders(request: Request, postcode: string) {
   const searchUrl = new URL('/api/providers/search', request.url)
   searchUrl.searchParams.set('postcode', postcode)
+
+  return fetchProvidersFromSearchEndpoint(request, searchUrl)
+}
+
+async function fetchNearbyProvidersByLocation(
+  request: Request,
+  location: string,
+  lat: number,
+  lng: number
+) {
+  const searchUrl = new URL('/api/providers/search-by-location', request.url)
+  searchUrl.searchParams.set('location', location)
+  searchUrl.searchParams.set('lat', String(lat))
+  searchUrl.searchParams.set('lng', String(lng))
+
+  return fetchProvidersFromSearchEndpoint(request, searchUrl)
+}
+
+async function fetchProvidersFromSearchEndpoint(request: Request, searchUrl: URL) {
 
   const searchResponse = await fetch(searchUrl.toString(), {
     method: 'GET',
@@ -192,24 +280,47 @@ breed_tags: ${provider.breed_tags.length > 0 ? provider.breed_tags.join(', ') : 
     .join('\n\n')
 }
 
-async function getAssistantReply(messages: AssistantChatMessage[], postcode: string, providers: AssistantProvider[]) {
+async function getAssistantReply(
+  messages: AssistantChatMessage[],
+  locationContext: AssistantLocationContext,
+  providers: AssistantProvider[]
+) {
   const key = process.env.DEEPSEEK_API_KEY
 
   if (!key) {
     throw new Error('DeepSeek API key missing')
   }
 
-  const systemInstructions = [
-    `Role: "You are PawFinder's brutally honest pet care advisor."`,
-    `Goal: "Match the user's specific request against the provided list of 5 nearby businesses and recommend the top 3."`,
-    `Rule (Cold-Start Transparency): "If a business has a pre-baked 'review_summary' or breed tags, use that data to prove specific fit. If those fields are blank, look at its general Google rating and total review count. Explicitly tell the user: 'This business is new to PawFinder so our community hasn't logged specific breed feedback yet, but they hold a [Rating]-star score on Google across [Count] reviews, making them a great option to look into.'"`,
-    `Rule (Honest Failure): "If absolutely none of the 5 options match what the user is looking for, tell them completely honestly that no perfect matches exist in this postcode, explain what is missing, and suggest the closest general alternative."`,
-    'Use only the businesses and facts provided by PawFinder.',
-    'Do not invent breed feedback, review summaries, facilities, or specialties.',
-    'If a provider has review_summary or breed_tags, use them as your strongest proof of fit.',
-    'When you use the cold-start transparency line, replace [Rating] and [Count] with the actual values from the business data.',
-    'Keep the answer practical and direct. Recommend up to 3 businesses in rank order with clear reasons.',
-  ].join('\n')
+  const hasLocationContext = Boolean(
+    locationContext.postcode ||
+      (locationContext.location && locationContext.lat !== null && locationContext.lng !== null)
+  )
+  const systemInstructions = hasLocationContext
+    ? [
+        `Role: "You are PawFinder's brutally honest pet care advisor."`,
+        `Goal: "Match the user's specific request against the provided list of 5 nearby businesses and recommend the top 3."`,
+        `Rule (Cold-Start Transparency): "If a business has a pre-baked 'review_summary' or breed tags, use that data to prove specific fit. If those fields are blank, look at its general Google rating and total review count. Explicitly tell the user: 'This business is new to PawFinder so our community hasn't logged specific breed feedback yet, but they hold a [Rating]-star score on Google across [Count] reviews, making them a great option to look into.'"`,
+        `Rule (Honest Failure): "If absolutely none of the 5 options match what the user is looking for, tell them completely honestly that no perfect matches exist in this postcode, explain what is missing, and suggest the closest general alternative."`,
+        `CRITICAL REJECTION RULE: If the user message asks for general-purpose AI tasks completely unrelated to pets, animals, or UK business directory services (e.g., writing software code, translation, mathematical puzzles, general essays, or creative writing prompts), you must immediately reject it. Respond ONLY with this exact sentence: 'I am your PawFinder assistant and can only help with pet care queries and local UK business matching. How can I help you find a pet service today?' Do not process or generate any additional content.`,
+        'Use only the businesses and facts provided by PawFinder.',
+        'Do not invent breed feedback, review summaries, facilities, or specialties.',
+        'If a provider has review_summary or breed_tags, use them as your strongest proof of fit.',
+        'When you use the cold-start transparency line, replace [Rating] and [Count] with the actual values from the business data.',
+        'Keep the answer practical and direct. Recommend up to 3 businesses in rank order with clear reasons.',
+      ].join('\n')
+    : [
+        `Role: "You are PawFinder's brutally honest pet care advisor."`,
+        `Instruction: "If the incoming payload has no postcode data, evaluate the user's requirements gracefully, acknowledge what they are looking for, and explicitly ask them to provide their postcode or city so PawFinder can pull the nearest matches."`,
+        `CRITICAL REJECTION RULE: If the user message asks for general-purpose AI tasks completely unrelated to pets, animals, or UK business directory services (e.g., writing software code, translation, mathematical puzzles, general essays, or creative writing prompts), you must immediately reject it. Respond ONLY with this exact sentence: 'I am your PawFinder assistant and can only help with pet care queries and local UK business matching. How can I help you find a pet service today?' Do not process or generate any additional content.`,
+        'Do not recommend specific businesses yet.',
+        'Explain briefly what signals you would use once location is available, such as breed fit, review summaries, ratings, or calm handling signals.',
+        'Keep the answer warm, direct, and concise.',
+      ].join('\n')
+  const contextMessage = hasLocationContext
+    ? `Search context:\nPostcode: ${locationContext.postcode || 'None'}\nLocation: ${
+        locationContext.location || 'None'
+      }\nNearby businesses:\n${buildProviderContext(providers)}`
+    : 'Search context: none provided yet. Ask for the user postcode or city before trying to compare nearby businesses.'
 
   const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
     method: 'POST',
@@ -227,7 +338,7 @@ async function getAssistantReply(messages: AssistantChatMessage[], postcode: str
         },
         {
           role: 'system',
-          content: `Postcode: ${postcode}\nNearby businesses:\n${buildProviderContext(providers)}`,
+          content: contextMessage,
         },
         ...messages,
       ],
@@ -237,7 +348,11 @@ async function getAssistantReply(messages: AssistantChatMessage[], postcode: str
   const rawBody = await response.text()
 
   if (!response.ok) {
-    throw new Error(`DeepSeek request failed: ${rawBody}`)
+    console.error('[assistant-chat] DeepSeek request failed', {
+      status: response.status,
+      body: rawBody,
+    })
+    throw new Error('DeepSeek request failed')
   }
 
   const data = JSON.parse(rawBody)
@@ -252,12 +367,37 @@ async function getAssistantReply(messages: AssistantChatMessage[], postcode: str
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const messages = normalizeMessages(body?.messages)
+    let body: unknown
+
+    try {
+      body = await request.json()
+    } catch (error) {
+      console.error('[assistant-chat] Invalid JSON body', error)
+      return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
+    }
+
+    const parsedBody = (body || {}) as {
+      messages?: unknown
+      postcode?: unknown
+      location?: unknown
+      lat?: unknown
+      lng?: unknown
+    }
+
+    validateIncomingMessages(parsedBody.messages)
+    const messages = normalizeMessages(parsedBody.messages)
     const postcode =
-      typeof body?.postcode === 'string' && body.postcode.trim().length > 0
-        ? normalizePostcode(body.postcode)
+      typeof parsedBody.postcode === 'string' && parsedBody.postcode.trim().length > 0
+        ? normalizePostcode(parsedBody.postcode)
         : null
+    const location =
+      typeof parsedBody.location === 'string' && parsedBody.location.trim().length > 0
+        ? parsedBody.location.trim()
+        : null
+    const lat =
+      typeof parsedBody.lat === 'number' && Number.isFinite(parsedBody.lat) ? parsedBody.lat : null
+    const lng =
+      typeof parsedBody.lng === 'number' && Number.isFinite(parsedBody.lng) ? parsedBody.lng : null
 
     if (messages.length === 0) {
       return NextResponse.json({ error: 'At least one user message is required' }, { status: 400 })
@@ -270,32 +410,57 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!postcode) {
+    if ((lat === null) !== (lng === null)) {
+      return NextResponse.json({ error: 'Both lat and lng are required together' }, { status: 400 })
+    }
+
+    const locationContext = {
+      postcode,
+      location,
+      lat,
+      lng,
+    } satisfies AssistantLocationContext
+
+    const hasSearchContext = Boolean(postcode || (location && lat !== null && lng !== null))
+
+    if (!hasSearchContext) {
+      const reply = await getAssistantReply(messages, locationContext, [])
+
       return NextResponse.json({
-        reply:
-          'I can help compare nearby pet-care options, but I need a full postcode first. Search with a postcode and ask again, and I’ll rank the closest businesses for your needs.',
+        reply,
         providers: [],
+        needs_location: true,
       })
     }
 
-    const providers = await fetchNearbyProviders(request, postcode)
+    const providers = postcode
+      ? await fetchNearbyProviders(request, postcode)
+      : await fetchNearbyProvidersByLocation(request, location!, lat!, lng!)
 
     if (providers.length === 0) {
       return NextResponse.json({
         reply:
-          `I couldn't find any nearby PawFinder providers to compare in ${postcode} yet. Try a nearby postcode or broaden the type of care you're looking for.`,
+          `I couldn't find any nearby PawFinder providers to compare in ${
+            postcode || location
+          } yet. Try a nearby postcode or broaden the type of care you're looking for.`,
         providers: [],
+        needs_location: false,
       })
     }
 
-    const reply = await getAssistantReply(messages, postcode, providers)
+    const reply = await getAssistantReply(messages, locationContext, providers)
 
     return NextResponse.json({
       reply,
       providers,
+      needs_location: false,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Assistant chat failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    if (error instanceof AssistantRouteError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+
+    console.error('[assistant-chat] Unhandled assistant error', error)
+    return NextResponse.json({ error: SAFE_ASSISTANT_ERROR }, { status: 500 })
   }
 }
