@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Quicksand } from "next/font/google";
 import Link from "next/link";
+import ChatBubble from "@/components/assistant/ChatBubble";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[#FAF7F1] text-[#20261F]">
         <main className="flex-1">{children}</main>
+        <ChatBubble />
         <footer className="border-t border-[#DCD3BE] bg-[#FCF8F2]">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 text-sm text-[#5B6258] sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
             <div>
