@@ -37,6 +37,8 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 const ASSISTANT_LOCATION_SESSION_KEY = "pawfinder:assistant-location-context";
 const CHAT_SESSION_STORAGE_KEY = "pawfinder_chat_session";
 const CHAT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15000;
+const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try again.";
 const DUPLICATE_MESSAGE_WARNING =
   "It looks like you've sent the same question! Please try rephrasing or asking something new.";
 
@@ -219,6 +221,8 @@ export default function ChatBubble() {
     conversationMessages: ChatMessage[],
     nextLocationContext: LocationSearchContext | null
   ) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     const locationPayload =
       nextLocationContext?.kind === "postcode"
         ? { postcode: nextLocationContext.postcode }
@@ -230,39 +234,52 @@ export default function ChatBubble() {
             }
           : {};
 
-    const response = await fetch("/api/assistant/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: conversationMessages.map(({ role, content }) => ({ role, content })),
-        ...locationPayload,
-      }),
-    });
+    try {
+      const response = await fetch("/api/assistant/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          messages: conversationMessages
+            .slice(-10)
+            .map(({ role, content }) => ({ role, content })),
+          ...locationPayload,
+        }),
+      });
 
-    const payload = (await response.json()) as AssistantApiResponse;
+      const payload = ((await response.json().catch(() => ({}))) || {}) as AssistantApiResponse;
 
-    if (!response.ok) {
-      throw new Error(
-        typeof payload?.error === "string" ? payload.error : "The assistant could not answer just now."
-      );
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error === "string" ? payload.error : "The assistant could not answer just now."
+        );
+      }
+
+      const reply =
+        typeof payload?.reply === "string" && payload.reply.trim().length > 0
+          ? payload.reply.trim()
+          : "I couldn’t generate a recommendation just now. Please try again.";
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: reply,
+        },
+      ]);
+      setIsCollectingLocation(Boolean(payload.needs_location));
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error(TIMEOUT_MESSAGE);
+      }
+
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-
-    const reply =
-      typeof payload?.reply === "string" && payload.reply.trim().length > 0
-        ? payload.reply.trim()
-        : "I couldn’t generate a recommendation just now. Please try again.";
-
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: `assistant-${Date.now()}`,
-        role: "assistant",
-        content: reply,
-      },
-    ]);
-    setIsCollectingLocation(Boolean(payload.needs_location));
   };
 
   const handleSend = async () => {

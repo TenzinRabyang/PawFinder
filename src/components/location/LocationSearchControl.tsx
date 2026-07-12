@@ -47,6 +47,8 @@ const PLACEHOLDER_EXAMPLES = [
   "Try 'S10 1BD'",
   "Try 'Sheffield'",
 ];
+const REQUEST_TIMEOUT_MS = 15000;
+const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try again.";
 
 export default function LocationSearchControl({
   id,
@@ -94,10 +96,13 @@ export default function LocationSearchControl({
     const timeoutId = window.setTimeout(async () => {
       setIsLoadingSuggestions(true);
       setAutocompleteError("");
+      const controller = new AbortController();
+      const abortTimeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
         const response = await fetch(`/api/location-autocomplete?input=${encodeURIComponent(trimmedValue)}`, {
           cache: "no-store",
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -122,8 +127,13 @@ export default function LocationSearchControl({
 
         setSuggestions([]);
         setShowSuggestions(false);
-        setAutocompleteError("Location suggestions are unavailable right now.");
+        setAutocompleteError(
+          fetchError instanceof DOMException && fetchError.name === "AbortError"
+            ? TIMEOUT_MESSAGE
+            : "Location suggestions are unavailable right now."
+        );
       } finally {
+        window.clearTimeout(abortTimeoutId);
         if (requestCounterRef.current === currentRequestId) {
           setIsLoadingSuggestions(false);
         }
@@ -167,10 +177,13 @@ export default function LocationSearchControl({
     setSuggestions([]);
     setIsLoadingSuggestions(false);
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     try {
       const response = await fetch(
         `/api/location-details?placeId=${encodeURIComponent(suggestion.place_id)}`,
-        { cache: "no-store" }
+        { cache: "no-store", signal: controller.signal }
       );
 
       if (!response.ok) {
@@ -199,7 +212,13 @@ export default function LocationSearchControl({
     } catch (detailsError) {
       console.error("[location-search-control] location details request failed", detailsError);
       setSelectedLocation(null);
-      setAutocompleteError("We couldn't prepare that location. Please try again.");
+      setAutocompleteError(
+        detailsError instanceof DOMException && detailsError.name === "AbortError"
+          ? TIMEOUT_MESSAGE
+          : "We couldn't prepare that location. Please try again."
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   };
 

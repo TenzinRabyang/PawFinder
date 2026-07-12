@@ -51,7 +51,29 @@ type AssistantLocationContext = {
 }
 
 const MAX_MESSAGE_COUNT = 12
-const MAX_MESSAGE_LENGTH = 1200
+const MAX_MESSAGE_LENGTH = 1000
+const SAFE_ASSISTANT_ERROR =
+  'Our assistant is currently taking a quick nap. Please try again in a moment!'
+const OFF_TOPIC_REJECTION_MESSAGE =
+  'I am your PawFinder assistant and can only help with pet care queries and local UK business matching. How can I help you find a pet service today?'
+const OBVIOUS_PROGRAMMATIC_PATTERNS = [
+  /\bfunction\s*\(/i,
+  /\bimport\s+react\b/i,
+  /\bwrite(?:\s+me)?\s+a\s+python\s+script\b/i,
+  /\bconsole\.log\b/i,
+  /\bfrom\s+['"]react['"]/i,
+]
+
+class AssistantRouteError extends Error {
+  status: number
+  exposeMessage: boolean
+
+  constructor(message: string, status = 500, exposeMessage = false) {
+    super(message)
+    this.status = status
+    this.exposeMessage = exposeMessage
+  }
+}
 
 function normalizePostcode(postcode: string) {
   return postcode.trim().toUpperCase().replace(/\s+/g, '')
@@ -89,6 +111,46 @@ function normalizeMessages(input: unknown): AssistantChatMessage[] {
       ...message,
       content: message.content.slice(0, MAX_MESSAGE_LENGTH),
     }))
+}
+
+function validateIncomingMessages(input: unknown) {
+  if (!Array.isArray(input)) {
+    throw new AssistantRouteError('Messages must be provided as an array.', 400, true)
+  }
+
+  if (input.length > MAX_MESSAGE_COUNT) {
+    throw new AssistantRouteError(
+      `Message history cannot exceed ${MAX_MESSAGE_COUNT} items.`,
+      400,
+      true
+    )
+  }
+
+  for (const message of input) {
+    if (!message || typeof message !== 'object') {
+      throw new AssistantRouteError('Each message must be an object.', 400, true)
+    }
+
+    const content = typeof (message as { content?: unknown }).content === 'string'
+      ? (message as { content: string }).content
+      : null
+
+    if (content === null) {
+      throw new AssistantRouteError('Each message must include text content.', 400, true)
+    }
+
+    if (content.length > MAX_MESSAGE_LENGTH) {
+      throw new AssistantRouteError(
+        `Messages cannot exceed ${MAX_MESSAGE_LENGTH} characters.`,
+        400,
+        true
+      )
+    }
+
+    if (OBVIOUS_PROGRAMMATIC_PATTERNS.some((pattern) => pattern.test(content))) {
+      throw new AssistantRouteError(OFF_TOPIC_REJECTION_MESSAGE, 400, true)
+    }
+  }
 }
 
 async function fetchNearbyProviders(request: Request, postcode: string) {
@@ -286,7 +348,11 @@ async function getAssistantReply(
   const rawBody = await response.text()
 
   if (!response.ok) {
-    throw new Error(`DeepSeek request failed: ${rawBody}`)
+    console.error('[assistant-chat] DeepSeek request failed', {
+      status: response.status,
+      body: rawBody,
+    })
+    throw new Error('DeepSeek request failed')
   }
 
   const data = JSON.parse(rawBody)
@@ -301,16 +367,37 @@ async function getAssistantReply(
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const messages = normalizeMessages(body?.messages)
+    let body: unknown
+
+    try {
+      body = await request.json()
+    } catch (error) {
+      console.error('[assistant-chat] Invalid JSON body', error)
+      return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
+    }
+
+    const parsedBody = (body || {}) as {
+      messages?: unknown
+      postcode?: unknown
+      location?: unknown
+      lat?: unknown
+      lng?: unknown
+    }
+
+    validateIncomingMessages(parsedBody.messages)
+    const messages = normalizeMessages(parsedBody.messages)
     const postcode =
-      typeof body?.postcode === 'string' && body.postcode.trim().length > 0
-        ? normalizePostcode(body.postcode)
+      typeof parsedBody.postcode === 'string' && parsedBody.postcode.trim().length > 0
+        ? normalizePostcode(parsedBody.postcode)
         : null
     const location =
-      typeof body?.location === 'string' && body.location.trim().length > 0 ? body.location.trim() : null
-    const lat = typeof body?.lat === 'number' && Number.isFinite(body.lat) ? body.lat : null
-    const lng = typeof body?.lng === 'number' && Number.isFinite(body.lng) ? body.lng : null
+      typeof parsedBody.location === 'string' && parsedBody.location.trim().length > 0
+        ? parsedBody.location.trim()
+        : null
+    const lat =
+      typeof parsedBody.lat === 'number' && Number.isFinite(parsedBody.lat) ? parsedBody.lat : null
+    const lng =
+      typeof parsedBody.lng === 'number' && Number.isFinite(parsedBody.lng) ? parsedBody.lng : null
 
     if (messages.length === 0) {
       return NextResponse.json({ error: 'At least one user message is required' }, { status: 400 })
@@ -369,7 +456,11 @@ export async function POST(request: Request) {
       needs_location: false,
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Assistant chat failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    if (error instanceof AssistantRouteError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+
+    console.error('[assistant-chat] Unhandled assistant error', error)
+    return NextResponse.json({ error: SAFE_ASSISTANT_ERROR }, { status: 500 })
   }
 }
