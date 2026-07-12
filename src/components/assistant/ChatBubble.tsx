@@ -1,6 +1,7 @@
 "use client";
 
 import { PawPrint, SendHorizontal, Sparkles, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type ChatMessage = {
@@ -18,14 +19,14 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   },
 ];
 
-const SUGGESTED_REPLY =
-  "Thanks, I’ve saved that request in this prototype chat. Next we can connect this bubble to search and provider recommendations.";
-
 export default function ChatBubble() {
+  const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [isLoading, setIsLoading] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const currentPostcode = searchParams.get("postcode")?.trim() || null;
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -36,35 +37,84 @@ export default function ChatBubble() {
       top: container.scrollHeight,
       behavior: "smooth",
     });
-  }, [messages, isOpen]);
+  }, [isLoading, isOpen, messages]);
 
   const messageCountLabel = useMemo(() => {
     const count = messages.length;
     return count === 1 ? "1 note" : `${count} notes`;
   }, [messages.length]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const trimmedDraft = draft.trim();
 
-    if (!trimmedDraft) return;
+    if (!trimmedDraft || isLoading) return;
 
     const timestamp = Date.now();
-
-    setMessages((currentMessages) => [
-      ...currentMessages,
+    const nextMessages = [
+      ...messages,
       {
         id: `user-${timestamp}`,
-        role: "user",
+        role: "user" as const,
         content: trimmedDraft,
       },
-      {
-        id: `assistant-${timestamp}`,
-        role: "assistant",
-        content: SUGGESTED_REPLY,
-      },
-    ]);
+    ];
+
+    setMessages(nextMessages);
     setDraft("");
     setIsOpen(true);
+
+    try {
+      setIsLoading(true);
+
+      const response = await fetch("/api/assistant/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
+          postcode: currentPostcode || undefined,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error === "string" ? payload.error : "The assistant could not answer just now."
+        );
+      }
+
+      const reply =
+        typeof payload?.reply === "string" && payload.reply.trim().length > 0
+          ? payload.reply.trim()
+          : "I couldn’t generate a recommendation just now. Please try again.";
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-${timestamp}`,
+          role: "assistant",
+          content: reply,
+        },
+      ]);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "The assistant hit a temporary problem. Please try again in a moment.";
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-error-${timestamp}`,
+          role: "assistant",
+          content: errorMessage,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -92,6 +142,9 @@ export default function ChatBubble() {
                   </h2>
                   <p className="mt-2 max-w-[18rem] text-sm leading-6 text-[#5B6258]">
                     Ask for specific conditions, e.g., &quot;vets with a quiet waiting area&quot;.
+                  </p>
+                  <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#7B8278]">
+                    {currentPostcode ? `Using postcode ${currentPostcode}` : "Add a postcode to unlock local matches"}
                   </p>
                 </div>
                 <button
@@ -136,6 +189,29 @@ export default function ChatBubble() {
                   </div>
                 );
               })}
+              {isLoading ? (
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-[1.35rem] border border-[#E4DBCA] bg-[#FFF8F1] px-4 py-3 text-sm leading-6 text-[#394136] shadow-[0_12px_24px_-20px_rgba(32,38,31,0.38)]">
+                    <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.2em] opacity-75">
+                      Assistant
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <span className="animate-pulse">Assistant is thinking...</span>
+                      <span className="flex items-center gap-1" aria-hidden="true">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[#B14A2B] animate-pulse" />
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-[#B14A2B] animate-pulse"
+                          style={{ animationDelay: "150ms" }}
+                        />
+                        <span
+                          className="h-1.5 w-1.5 rounded-full bg-[#B14A2B] animate-pulse"
+                          style={{ animationDelay: "300ms" }}
+                        />
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <form
@@ -156,13 +232,14 @@ export default function ChatBubble() {
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     placeholder="Describe the care you need..."
+                    disabled={isLoading}
                     className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
                   />
                   <PawPrint className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#B14A2B]" />
                 </div>
                 <button
                   type="submit"
-                  disabled={!draft.trim()}
+                  disabled={!draft.trim() || isLoading}
                   className="inline-flex h-12 items-center gap-2 rounded-[1.1rem] bg-[#B14A2B] px-4 text-sm font-semibold text-[#FFF8F2] shadow-[0_18px_34px_-22px_rgba(177,74,43,0.8)] transition hover:bg-[#973D24] disabled:cursor-not-allowed disabled:bg-[#CFA393] disabled:shadow-none"
                 >
                   <span>Send</span>
