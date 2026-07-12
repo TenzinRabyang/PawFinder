@@ -20,6 +20,11 @@ type AssistantApiResponse = {
   needs_location?: boolean;
 };
 
+type StoredChatSession = {
+  timestamp: number;
+  messages: ChatMessage[];
+};
+
 const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: "assistant-welcome",
@@ -30,6 +35,53 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 ];
 
 const ASSISTANT_LOCATION_SESSION_KEY = "pawfinder:assistant-location-context";
+const CHAT_SESSION_STORAGE_KEY = "pawfinder_chat_session";
+const CHAT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const DUPLICATE_MESSAGE_WARNING =
+  "It looks like you've sent the same question! Please try rephrasing or asking something new.";
+
+function isValidChatMessageArray(value: unknown): value is ChatMessage[] {
+  return Array.isArray(value) && value.every((message) => {
+    if (!message || typeof message !== "object") return false;
+
+    const candidate = message as Partial<ChatMessage>;
+    return (
+      (candidate.role === "assistant" || candidate.role === "user") &&
+      typeof candidate.id === "string" &&
+      typeof candidate.content === "string"
+    );
+  });
+}
+
+function getInitialMessages() {
+  if (typeof window === "undefined") {
+    return INITIAL_MESSAGES;
+  }
+
+  const rawSession = window.localStorage.getItem(CHAT_SESSION_STORAGE_KEY);
+
+  if (!rawSession) {
+    return INITIAL_MESSAGES;
+  }
+
+  try {
+    const parsed = JSON.parse(rawSession) as Partial<StoredChatSession>;
+
+    if (
+      typeof parsed.timestamp !== "number" ||
+      Date.now() - parsed.timestamp > CHAT_SESSION_TTL_MS ||
+      !isValidChatMessageArray(parsed.messages)
+    ) {
+      window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+      return INITIAL_MESSAGES;
+    }
+
+    return parsed.messages.length > 0 ? parsed.messages : INITIAL_MESSAGES;
+  } catch {
+    window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+    return INITIAL_MESSAGES;
+  }
+}
 
 function isValidLocationContext(value: unknown): value is LocationSearchContext {
   if (!value || typeof value !== "object") return false;
@@ -86,7 +138,7 @@ export default function ChatBubble() {
   const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>(getInitialMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [isCollectingLocation, setIsCollectingLocation] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -114,6 +166,17 @@ export default function ChatBubble() {
       JSON.stringify(urlLocationContext)
     );
   }, [urlLocationContext]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const payload: StoredChatSession = {
+      timestamp: Date.now(),
+      messages,
+    };
+
+    window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, JSON.stringify(payload));
+  }, [messages]);
 
   const activeLocationContext = (() => {
     if (urlLocationContext) {
@@ -206,6 +269,22 @@ export default function ChatBubble() {
     const trimmedDraft = draft.trim();
 
     if (!trimmedDraft || isLoading) return;
+
+    const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
+
+    if (lastUserMessage?.content.trim() === trimmedDraft) {
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: `assistant-duplicate-${Date.now()}`,
+          role: "assistant",
+          content: DUPLICATE_MESSAGE_WARNING,
+        },
+      ]);
+      setDraft("");
+      setIsOpen(true);
+      return;
+    }
 
     const timestamp = Date.now();
     const nextMessages = [
@@ -313,6 +392,9 @@ export default function ChatBubble() {
                   </h2>
                   <p className="mt-2 max-w-[18rem] text-sm leading-6 text-[#5B6258]">
                     Ask for specific conditions, e.g., &quot;vets with a quiet waiting area&quot;.
+                  </p>
+                  <p className="mt-2 font-sans text-[0.78rem] leading-5 text-[#6C7468]">
+                    History saved on device for 24 hours.
                   </p>
                   <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#7B8278]">
                     {activeLocationLabel || "Ask first, then add your postcode or city when needed"}
