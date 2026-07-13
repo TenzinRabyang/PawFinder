@@ -180,6 +180,16 @@ export default function ChatBubble() {
     window.localStorage.setItem(CHAT_SESSION_STORAGE_KEY, JSON.stringify(payload));
   }, [messages]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    document.body.style.overflow = isOpen ? "hidden" : "";
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
   const activeLocationContext = (() => {
     if (urlLocationContext) {
       return urlLocationContext;
@@ -434,7 +444,7 @@ export default function ChatBubble() {
 
             <div
               ref={scrollContainerRef}
-              className="max-h-80 space-y-3 overflow-y-auto bg-[linear-gradient(180deg,#FFFDFC_0%,#FAF7F1_100%)] px-4 py-4"
+              className="max-h-80 space-y-3 overflow-y-auto overscroll-contain bg-[linear-gradient(180deg,#FFFDFC_0%,#FAF7F1_100%)] px-4 py-4"
             >
               {messages.map((message) => {
                 const isAssistant = message.role === "assistant";
