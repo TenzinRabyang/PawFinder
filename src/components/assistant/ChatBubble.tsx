@@ -508,7 +508,7 @@ export default function ChatBubble() {
                 {provider?.category || "Category unavailable"}
               </p>
               <a
-                href={`/provider/${segment.providerId}`}
+                href={`/provider/${segment.providerId}?featured=1`}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#D6C8B3] bg-white px-3 py-1.5 text-xs font-semibold text-[#B14A2B] transition hover:border-[#B14A2B] hover:text-[#973D24]"
@@ -530,7 +530,7 @@ export default function ChatBubble() {
           <section
             id="pawfinder-assistant-panel"
             aria-label="PawFinder Assistant"
-            className="pawfinder-fade-up fixed bottom-24 left-4 right-4 z-[81] flex max-h-[calc(100vh-120px)] min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-[#DCD3BE] bg-[#FFFDFC] shadow-[0_30px_70px_-34px_rgba(32,38,31,0.42)] md:left-auto md:w-[400px]"
+            className="pawfinder-fade-up fixed top-16 bottom-24 left-4 right-4 z-[81] flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-[#DCD3BE] bg-[#FFFDFC] shadow-[0_30px_70px_-34px_rgba(32,38,31,0.42)] md:top-auto md:bottom-28 md:left-auto md:w-[400px] md:h-[600px] md:max-h-[80vh]"
           >
             <div className="shrink-0 border-b border-[#E8DECC] bg-[linear-gradient(180deg,rgba(250,247,241,0.96),rgba(255,253,252,0.98))] px-5 py-4">
               <div className="flex items-start justify-between gap-4">

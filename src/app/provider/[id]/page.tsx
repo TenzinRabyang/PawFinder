@@ -106,6 +106,7 @@ type EnsureTagsResponse = {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const GOOGLE_PLACE_ID_PATTERN = /^ChI[A-Za-z0-9_-]{10,}$/
 
 function isUuidLike(value: string) {
   return UUID_PATTERN.test(value.trim())
@@ -113,6 +114,11 @@ function isUuidLike(value: string) {
 
 function hasItems(value: unknown): value is unknown[] {
   return Array.isArray(value) && value.length > 0
+}
+
+function looksLikeGooglePlaceId(value: string | null | undefined) {
+  if (typeof value !== 'string') return false
+  return GOOGLE_PLACE_ID_PATTERN.test(value.trim())
 }
 
 type ProviderPageBreedStatus =
@@ -470,6 +476,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       }
 
       const canonicalPlaceId = dbProvider?.google_place_id || id
+      const canFetchLiveDetails = Boolean(
+        (dbProvider?.google_place_id && looksLikeGooglePlaceId(dbProvider.google_place_id)) ||
+          looksLikeGooglePlaceId(canonicalPlaceId)
+      )
       const canonicalCachedProfile = (
         getProviderSessionCache(canonicalPlaceId)?.providerSnapshot as ProviderProfileRecord | undefined
       ) || cachedProvider
@@ -499,7 +509,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         !hasItems(canonicalCachedLiveDetails.photos) ||
         !hasItems(canonicalCachedLiveDetails.reviews)
 
-      if (shouldHydrateLiveDetails) {
+      if (shouldHydrateLiveDetails && canFetchLiveDetails) {
         const detailsUrl = `/api/providers/${encodeURIComponent(canonicalPlaceId)}/live-details?include_ai_summary=1`
         let res: Response | null = null
         try {
@@ -523,6 +533,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             liveDetailsSnapshot: data,
           })
         }
+      } else if (shouldHydrateLiveDetails && !canFetchLiveDetails) {
+        console.warn('[provider-page] skipped live-details fetch for unresolved route parameter', {
+          id,
+          canonicalPlaceId,
+        })
       }
 
       // 2. Fetch our DB data (using google_place_id)
