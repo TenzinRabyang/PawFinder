@@ -1,6 +1,6 @@
 "use client";
 
-import { PawPrint, SendHorizontal, Sparkles, X } from "lucide-react";
+import { ExternalLink, PawPrint, SendHorizontal, Sparkles, Trash2, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -12,12 +12,20 @@ type ChatMessage = {
   id: string;
   role: "assistant" | "user";
   content: string;
+  providers?: AssistantProviderCard[];
+};
+
+type AssistantProviderCard = {
+  id: string;
+  name: string;
+  category: string | null;
 };
 
 type AssistantApiResponse = {
   reply?: string;
   error?: string;
   needs_location?: boolean;
+  providers?: AssistantProviderCard[];
 };
 
 type StoredChatSession = {
@@ -41,6 +49,59 @@ const REQUEST_TIMEOUT_MS = 18000;
 const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try again.";
 const DUPLICATE_MESSAGE_WARNING =
   "It looks like you've sent the same question! Please try rephrasing or asking something new.";
+const PROVIDER_LINK_REGEX = /\[([^\]]+)\]\(provider:([^)]+)\)/g;
+
+type MessageSegment =
+  | { type: "text"; value: string }
+  | { type: "provider"; name: string; providerId: string };
+
+function isValidProviderCardArray(value: unknown): value is AssistantProviderCard[] {
+  return Array.isArray(value) && value.every((provider) => {
+    if (!provider || typeof provider !== "object") return false;
+
+    const candidate = provider as Partial<AssistantProviderCard>;
+    return (
+      typeof candidate.id === "string" &&
+      typeof candidate.name === "string" &&
+      (typeof candidate.category === "string" || candidate.category === null || candidate.category === undefined)
+    );
+  });
+}
+
+function parseMessageSegments(content: string): MessageSegment[] {
+  const segments: MessageSegment[] = [];
+  let lastIndex = 0;
+
+  for (const match of content.matchAll(PROVIDER_LINK_REGEX)) {
+    const matchedText = match[0];
+    const name = match[1];
+    const providerId = match[2];
+    const matchIndex = match.index ?? -1;
+
+    if (matchIndex > lastIndex) {
+      segments.push({
+        type: "text",
+        value: content.slice(lastIndex, matchIndex),
+      });
+    }
+
+    segments.push({
+      type: "provider",
+      name,
+      providerId,
+    });
+    lastIndex = matchIndex + matchedText.length;
+  }
+
+  if (lastIndex < content.length) {
+    segments.push({
+      type: "text",
+      value: content.slice(lastIndex),
+    });
+  }
+
+  return segments.length > 0 ? segments : [{ type: "text", value: content }];
+}
 
 function isValidChatMessageArray(value: unknown): value is ChatMessage[] {
   return Array.isArray(value) && value.every((message) => {
@@ -50,7 +111,8 @@ function isValidChatMessageArray(value: unknown): value is ChatMessage[] {
     return (
       (candidate.role === "assistant" || candidate.role === "user") &&
       typeof candidate.id === "string" &&
-      typeof candidate.content === "string"
+      typeof candidate.content === "string" &&
+      (candidate.providers === undefined || isValidProviderCardArray(candidate.providers))
     );
   });
 }
@@ -143,6 +205,7 @@ export default function ChatBubble() {
   const [messages, setMessages] = useState<ChatMessage[]>(getInitialMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [isCollectingLocation, setIsCollectingLocation] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const urlLocationContext = useMemo(
     () => getLocationContextFromSearchParams(searchParams),
@@ -271,6 +334,13 @@ export default function ChatBubble() {
         typeof payload?.reply === "string" && payload.reply.trim().length > 0
           ? payload.reply.trim()
           : "I couldn’t generate a recommendation just now. Please try again.";
+      const providerCards = isValidProviderCardArray(payload.providers)
+        ? payload.providers.map((provider) => ({
+            id: provider.id,
+            name: provider.name,
+            category: provider.category ?? null,
+          }))
+        : undefined;
 
       setMessages((currentMessages) => [
         ...currentMessages,
@@ -278,6 +348,7 @@ export default function ChatBubble() {
           id: `assistant-${Date.now()}`,
           role: "assistant",
           content: reply,
+          providers: providerCards,
         },
       ]);
       setIsCollectingLocation(Boolean(payload.needs_location));
@@ -296,6 +367,7 @@ export default function ChatBubble() {
     const trimmedDraft = draft.trim();
 
     if (!trimmedDraft || isLoading) return;
+    setShowResetConfirm(false);
 
     const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
 
@@ -370,6 +442,7 @@ export default function ChatBubble() {
       JSON.stringify(nextLocationContext)
     );
     setMessages(nextMessages);
+    setShowResetConfirm(false);
 
     try {
       setIsLoading(true);
@@ -392,6 +465,62 @@ export default function ChatBubble() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleResetConversation = () => {
+    setMessages(INITIAL_MESSAGES);
+    setDraft("");
+    setIsCollectingLocation(false);
+    setShowResetConfirm(false);
+    window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+  };
+
+  const renderMessageBody = (message: ChatMessage) => {
+    const providerMap = new Map(
+      (message.providers || []).map((provider) => [provider.id, provider] as const)
+    );
+    const segments = parseMessageSegments(message.content);
+
+    return (
+      <div className="space-y-2.5">
+        {segments.map((segment, index) => {
+          if (segment.type === "text") {
+            if (!segment.value.trim()) return null;
+
+            return (
+              <p key={`${message.id}-text-${index}`} className="whitespace-pre-wrap">
+                {segment.value.trim()}
+              </p>
+            );
+          }
+
+          const provider = providerMap.get(segment.providerId);
+
+          return (
+            <div
+              key={`${message.id}-provider-${segment.providerId}-${index}`}
+              className="rounded-[1rem] border border-[#DCCFB7] bg-[#FFFCF7] p-3 text-[#20261F] shadow-[0_12px_24px_-22px_rgba(32,38,31,0.35)]"
+            >
+              <p className="font-semibold leading-5 text-[#20261F]">
+                {provider?.name || segment.name}
+              </p>
+              <p className="mt-1 text-xs font-medium uppercase tracking-[0.18em] text-[#7B8278]">
+                {provider?.category || "Category unavailable"}
+              </p>
+              <a
+                href={`/provider/${segment.providerId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#D6C8B3] bg-white px-3 py-1.5 text-xs font-semibold text-[#B14A2B] transition hover:border-[#B14A2B] hover:text-[#973D24]"
+              >
+                <span>View Profile</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -427,20 +556,55 @@ export default function ChatBubble() {
                     {activeLocationLabel || "Ask first, then add your postcode or city when needed"}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOpen(false)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E6DECD] bg-white text-[#6E7C5B] transition hover:border-[#D0C4AE] hover:text-[#20261F]"
-                  aria-label="Close assistant"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowResetConfirm((currentValue) => !currentValue)}
+                    className="inline-flex h-9 items-center gap-2 rounded-full border border-[#E6DECD] bg-white px-3 text-[#8C5B4D] transition hover:border-[#D0C4AE] hover:text-[#20261F]"
+                    aria-label="Reset chat history"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="text-xs font-semibold uppercase tracking-[0.14em]">Reset</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E6DECD] bg-white text-[#6E7C5B] transition hover:border-[#D0C4AE] hover:text-[#20261F]"
+                    aria-label="Close assistant"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="border-b border-[#EEE6D7] bg-[#FAF7F1]/88 px-5 py-2.5 text-xs uppercase tracking-[0.2em] text-[#7B8278]">
               {messageCountLabel}
             </div>
+
+            {showResetConfirm ? (
+              <div className="border-b border-[#EEE6D7] bg-[#FFF7F2] px-5 py-4">
+                <p className="text-sm font-medium leading-6 text-[#7A3E2C]">
+                  Are you sure you want to permanently delete your chat history?
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleResetConversation}
+                    className="inline-flex items-center rounded-full bg-[#B14A2B] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#FFF8F2] transition hover:bg-[#973D24]"
+                  >
+                    Yes, Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowResetConfirm(false)}
+                    className="inline-flex items-center rounded-full border border-[#D9CBB6] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#5B6258] transition hover:border-[#BCA88B] hover:text-[#20261F]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <div
               ref={scrollContainerRef}
@@ -464,7 +628,7 @@ export default function ChatBubble() {
                       <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.2em] opacity-75">
                         {isAssistant ? "Assistant" : "You"}
                       </p>
-                      <p>{message.content}</p>
+                      {renderMessageBody(message)}
                     </div>
                   </div>
                 );
