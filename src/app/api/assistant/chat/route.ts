@@ -63,6 +63,7 @@ type AssistantLocationContext = {
 
 const MAX_MESSAGE_COUNT = 12
 const MAX_MESSAGE_LENGTH = 1000
+const RAPID_ENRICHMENT_TIMEOUT_MS = 4000
 const SAFE_ASSISTANT_ERROR =
   'Our assistant is currently taking a quick nap. Please try again in a moment!'
 const OFF_TOPIC_REJECTION_MESSAGE =
@@ -275,6 +276,149 @@ async function fetchProvidersFromSearchEndpoint(request: Request, searchUrl: URL
   })
 }
 
+function buildLiveDetailsUrl(request: Request, placeId: string) {
+  const liveDetailsUrl = new URL(`/api/providers/${encodeURIComponent(placeId)}/live-details`, request.url)
+  liveDetailsUrl.searchParams.set('include_ai_summary', '1')
+  return liveDetailsUrl
+}
+
+async function fetchLiveDetails(
+  request: Request,
+  placeId: string,
+  timeoutMs?: number
+): Promise<LiveDetailsResponse> {
+  const liveDetailsResponse = await fetch(buildLiveDetailsUrl(request, placeId).toString(), {
+    method: 'GET',
+    cache: 'no-store',
+    headers: {
+      cookie: request.headers.get('cookie') || '',
+    },
+    signal: typeof timeoutMs === 'number' ? AbortSignal.timeout(timeoutMs) : undefined,
+  })
+
+  if (!liveDetailsResponse.ok) {
+    throw new Error(`live-details returned ${liveDetailsResponse.status}`)
+  }
+
+  return (await liveDetailsResponse.json()) as LiveDetailsResponse
+}
+
+async function triggerEnsureTags(
+  request: Request,
+  provider: AssistantProvider,
+  placeId: string,
+  liveDetails: LiveDetailsResponse | null,
+  timeoutMs?: number
+) {
+  const ensureTagsUrl = new URL(`/api/providers/${encodeURIComponent(placeId)}/ensure-tags`, request.url)
+  const ensureTagsResponse = await fetch(ensureTagsUrl.toString(), {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: request.headers.get('cookie') || '',
+    },
+    signal: typeof timeoutMs === 'number' ? AbortSignal.timeout(timeoutMs) : undefined,
+    body: JSON.stringify({
+      name: liveDetails?.name || provider.name,
+      address: liveDetails?.formatted_address || provider.address,
+      category: provider.category?.toLowerCase().replace(/\s+/g, '_') || undefined,
+      website: liveDetails?.website,
+      phone: liveDetails?.formatted_phone_number,
+      googleTypes: Array.isArray(liveDetails?.types) ? liveDetails.types : [],
+      live_place_details: liveDetails
+        ? {
+            place_id: liveDetails.place_id || placeId,
+            name: liveDetails.name,
+            formatted_address: liveDetails.formatted_address,
+            formatted_phone_number: liveDetails.formatted_phone_number,
+            website: liveDetails.website,
+            types: liveDetails.types,
+            photos: liveDetails.photos,
+          }
+        : undefined,
+    }),
+  })
+
+  if (!ensureTagsResponse.ok) {
+    const responseText = await ensureTagsResponse.text().catch(() => '')
+    throw new Error(`ensure-tags returned ${ensureTagsResponse.status}: ${responseText}`)
+  }
+}
+
+async function persistReviewSummary(
+  supabaseAdmin: ReturnType<typeof createAdminClient>,
+  placeId: string,
+  summary: string
+) {
+  const { error: summaryUpdateError } = await supabaseAdmin
+    .from('pf_providers')
+    .update({
+      review_summary: summary,
+      review_summary_updated_at: new Date().toISOString(),
+    })
+    .eq('google_place_id', placeId)
+
+  if (summaryUpdateError) {
+    throw summaryUpdateError
+  }
+}
+
+function kickoffBackgroundEnrichment(
+  request: Request,
+  provider: AssistantProvider,
+  placeId: string,
+  options: {
+    needsReviewSummary: boolean
+    needsBreedTags: boolean
+  }
+) {
+  const supabaseAdmin = createAdminClient()
+
+  void (async () => {
+    let liveDetails: LiveDetailsResponse | null = null
+
+    await Promise.allSettled([
+      options.needsReviewSummary || options.needsBreedTags
+        ? (async () => {
+            try {
+              liveDetails = await fetchLiveDetails(request, placeId)
+              const aiSummary =
+                typeof liveDetails.ai_summary === 'string' && liveDetails.ai_summary.trim()
+                  ? liveDetails.ai_summary.trim()
+                  : null
+
+              if (options.needsReviewSummary && aiSummary) {
+                await persistReviewSummary(
+                  supabaseAdmin,
+                  liveDetails.place_id || provider.google_place_id || placeId,
+                  aiSummary
+                )
+              }
+            } catch (error) {
+              console.warn('[assistant-chat] background live-details enrichment failed', {
+                placeId,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
+          })()
+        : Promise.resolve(),
+      options.needsBreedTags
+        ? (async () => {
+            try {
+              await triggerEnsureTags(request, provider, placeId, liveDetails)
+            } catch (error) {
+              console.warn('[assistant-chat] background ensure-tags enrichment failed', {
+                placeId,
+                error: error instanceof Error ? error.message : String(error),
+              })
+            }
+          })()
+        : Promise.resolve(),
+    ])
+  })()
+}
+
 async function enrichProviderIfNeeded(request: Request, provider: AssistantProvider) {
   const needsReviewSummary = !provider.review_summary?.trim()
   const needsBreedTags = provider.breed_tags.length === 0
@@ -292,91 +436,46 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
   const supabaseAdmin = createAdminClient()
   let liveDetails: LiveDetailsResponse | null = null
   let aiSummary = provider.review_summary
+  let shouldContinueInBackground = false
 
   try {
-    const liveDetailsUrl = new URL(
-      `/api/providers/${encodeURIComponent(placeId)}/live-details`,
-      request.url
-    )
-    liveDetailsUrl.searchParams.set('include_ai_summary', '1')
-
-    const liveDetailsResponse = await fetch(liveDetailsUrl.toString(), {
-      method: 'GET',
-      cache: 'no-store',
-      headers: {
-        cookie: request.headers.get('cookie') || '',
-      },
-      signal: AbortSignal.timeout(12000),
-    })
-
-    if (!liveDetailsResponse.ok) {
-      throw new Error(`live-details returned ${liveDetailsResponse.status}`)
-    }
-
-    const payload = (await liveDetailsResponse.json()) as LiveDetailsResponse
-    liveDetails = payload
-    aiSummary = typeof payload.ai_summary === 'string' && payload.ai_summary.trim() ? payload.ai_summary.trim() : aiSummary
+    await Promise.all([
+      needsReviewSummary || needsBreedTags
+        ? fetchLiveDetails(request, placeId, RAPID_ENRICHMENT_TIMEOUT_MS).then((payload) => {
+            liveDetails = payload
+            aiSummary =
+              typeof payload.ai_summary === 'string' && payload.ai_summary.trim()
+                ? payload.ai_summary.trim()
+                : aiSummary
+          })
+        : Promise.resolve(),
+      needsBreedTags
+        ? triggerEnsureTags(request, provider, placeId, null, RAPID_ENRICHMENT_TIMEOUT_MS)
+        : Promise.resolve(),
+    ])
   } catch (error) {
-    console.warn('[assistant-chat] live details enrichment failed', {
+    shouldContinueInBackground = true
+    console.warn('[assistant-chat] rapid provider enrichment fell back to basic details', {
       placeId,
       error: error instanceof Error ? error.message : String(error),
     })
   }
 
   try {
-    if (needsBreedTags) {
-      const ensureTagsUrl = new URL(
-        `/api/providers/${encodeURIComponent(placeId)}/ensure-tags`,
-        request.url
-      )
-
-      const ensureTagsResponse = await fetch(ensureTagsUrl.toString(), {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-          cookie: request.headers.get('cookie') || '',
-        },
-        signal: AbortSignal.timeout(12000),
-        body: JSON.stringify({
-          name: liveDetails?.name || provider.name,
-          address: liveDetails?.formatted_address || provider.address,
-          category: provider.category?.toLowerCase().replace(/\s+/g, '_') || undefined,
-          website: liveDetails?.website,
-          phone: liveDetails?.formatted_phone_number,
-          googleTypes: Array.isArray(liveDetails?.types) ? liveDetails.types : [],
-          live_place_details: liveDetails
-            ? {
-                place_id: liveDetails.place_id || placeId,
-                name: liveDetails.name,
-                formatted_address: liveDetails.formatted_address,
-                formatted_phone_number: liveDetails.formatted_phone_number,
-                website: liveDetails.website,
-                types: liveDetails.types,
-                photos: liveDetails.photos,
-              }
-            : undefined,
-        }),
-      })
-
-      if (!ensureTagsResponse.ok) {
-        const responseText = await ensureTagsResponse.text().catch(() => '')
-        throw new Error(`ensure-tags returned ${ensureTagsResponse.status}: ${responseText}`)
-      }
-    }
-
     if (needsReviewSummary && aiSummary?.trim()) {
-      const { error: summaryUpdateError } = await supabaseAdmin
-        .from('pf_providers')
-        .update({
-          review_summary: aiSummary.trim(),
-          review_summary_updated_at: new Date().toISOString(),
-        })
-        .eq('google_place_id', liveDetails?.place_id || placeId)
+      const resolvedLiveDetails = liveDetails as LiveDetailsResponse | null
+      const summaryTargetPlaceId =
+        (resolvedLiveDetails &&
+          typeof resolvedLiveDetails.place_id === 'string' &&
+          resolvedLiveDetails.place_id) ||
+        provider.google_place_id ||
+        placeId
 
-      if (summaryUpdateError) {
-        throw summaryUpdateError
-      }
+      await persistReviewSummary(
+        supabaseAdmin,
+        summaryTargetPlaceId,
+        aiSummary.trim()
+      )
     }
   } catch (error) {
     console.warn('[assistant-chat] provider enrichment persistence failed', {
@@ -385,11 +484,26 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
     })
   }
 
+  if (shouldContinueInBackground) {
+    kickoffBackgroundEnrichment(request, provider, placeId, {
+      needsReviewSummary,
+      needsBreedTags,
+    })
+  }
+
+  const refreshedPlaceId =
+    ((liveDetails as LiveDetailsResponse | null)?.place_id &&
+    typeof (liveDetails as LiveDetailsResponse | null)?.place_id === 'string'
+      ? (liveDetails as LiveDetailsResponse | null)?.place_id
+      : null) ||
+    provider.google_place_id ||
+    placeId
+
   try {
     const { data: refreshedProvider } = await supabaseAdmin
       .from('pf_providers')
       .select('google_place_id, category, review_summary, breeds_specialised, breeds_general_inferred')
-      .eq('google_place_id', liveDetails?.place_id || placeId)
+      .eq('google_place_id', refreshedPlaceId)
       .maybeSingle()
 
     const refreshedBreedTags = refreshedProvider
@@ -401,7 +515,7 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
 
     return {
       ...provider,
-      google_place_id: liveDetails?.place_id || provider.google_place_id || placeId,
+      google_place_id: refreshedPlaceId,
       category: formatCategoryLabel(refreshedProvider?.category || provider.category),
       review_summary:
         refreshedProvider?.review_summary?.trim() || aiSummary?.trim() || provider.review_summary,
@@ -415,7 +529,7 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
 
     return {
       ...provider,
-      google_place_id: liveDetails?.place_id || provider.google_place_id || placeId,
+      google_place_id: refreshedPlaceId,
       review_summary: aiSummary?.trim() || provider.review_summary,
     }
   }
