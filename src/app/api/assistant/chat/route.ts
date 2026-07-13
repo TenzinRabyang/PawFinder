@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { createClient } from '@/utils/supabase/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 
 type AssistantChatMessage = {
   role: 'assistant' | 'user'
@@ -41,6 +41,17 @@ type AssistantProvider = {
   total_review_count: number | null
   review_summary: string | null
   breed_tags: string[]
+}
+
+type LiveDetailsResponse = {
+  place_id?: string
+  name?: string
+  formatted_address?: string
+  formatted_phone_number?: string
+  website?: string
+  types?: string[]
+  photos?: Array<Record<string, unknown>>
+  ai_summary?: string | null
 }
 
 type AssistantLocationContext = {
@@ -175,7 +186,6 @@ async function fetchNearbyProvidersByLocation(
 }
 
 async function fetchProvidersFromSearchEndpoint(request: Request, searchUrl: URL) {
-
   const searchResponse = await fetch(searchUrl.toString(), {
     method: 'GET',
     headers: {
@@ -202,7 +212,7 @@ async function fetchProvidersFromSearchEndpoint(request: Request, searchUrl: URL
     return [] as AssistantProvider[]
   }
 
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const internalIds = dedupeValues(rawProviders.map((provider) => provider.id))
   const googlePlaceIds = dedupeValues(rawProviders.map((provider) => provider.google_place_id))
 
@@ -263,6 +273,156 @@ async function fetchProvidersFromSearchEndpoint(request: Request, searchUrl: URL
       breed_tags: breedTags,
     } satisfies AssistantProvider
   })
+}
+
+async function enrichProviderIfNeeded(request: Request, provider: AssistantProvider) {
+  const needsReviewSummary = !provider.review_summary?.trim()
+  const needsBreedTags = provider.breed_tags.length === 0
+
+  if (!needsReviewSummary && !needsBreedTags) {
+    return provider
+  }
+
+  const placeId = provider.google_place_id || provider.id
+
+  if (!placeId) {
+    return provider
+  }
+
+  const supabaseAdmin = createAdminClient()
+  let liveDetails: LiveDetailsResponse | null = null
+  let aiSummary = provider.review_summary
+
+  try {
+    const liveDetailsUrl = new URL(
+      `/api/providers/${encodeURIComponent(placeId)}/live-details`,
+      request.url
+    )
+    liveDetailsUrl.searchParams.set('include_ai_summary', '1')
+
+    const liveDetailsResponse = await fetch(liveDetailsUrl.toString(), {
+      method: 'GET',
+      cache: 'no-store',
+      headers: {
+        cookie: request.headers.get('cookie') || '',
+      },
+      signal: AbortSignal.timeout(12000),
+    })
+
+    if (!liveDetailsResponse.ok) {
+      throw new Error(`live-details returned ${liveDetailsResponse.status}`)
+    }
+
+    const payload = (await liveDetailsResponse.json()) as LiveDetailsResponse
+    liveDetails = payload
+    aiSummary = typeof payload.ai_summary === 'string' && payload.ai_summary.trim() ? payload.ai_summary.trim() : aiSummary
+  } catch (error) {
+    console.warn('[assistant-chat] live details enrichment failed', {
+      placeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  try {
+    if (needsBreedTags) {
+      const ensureTagsUrl = new URL(
+        `/api/providers/${encodeURIComponent(placeId)}/ensure-tags`,
+        request.url
+      )
+
+      const ensureTagsResponse = await fetch(ensureTagsUrl.toString(), {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: request.headers.get('cookie') || '',
+        },
+        signal: AbortSignal.timeout(12000),
+        body: JSON.stringify({
+          name: liveDetails?.name || provider.name,
+          address: liveDetails?.formatted_address || provider.address,
+          category: provider.category?.toLowerCase().replace(/\s+/g, '_') || undefined,
+          website: liveDetails?.website,
+          phone: liveDetails?.formatted_phone_number,
+          googleTypes: Array.isArray(liveDetails?.types) ? liveDetails.types : [],
+          live_place_details: liveDetails
+            ? {
+                place_id: liveDetails.place_id || placeId,
+                name: liveDetails.name,
+                formatted_address: liveDetails.formatted_address,
+                formatted_phone_number: liveDetails.formatted_phone_number,
+                website: liveDetails.website,
+                types: liveDetails.types,
+                photos: liveDetails.photos,
+              }
+            : undefined,
+        }),
+      })
+
+      if (!ensureTagsResponse.ok) {
+        const responseText = await ensureTagsResponse.text().catch(() => '')
+        throw new Error(`ensure-tags returned ${ensureTagsResponse.status}: ${responseText}`)
+      }
+    }
+
+    if (needsReviewSummary && aiSummary?.trim()) {
+      const { error: summaryUpdateError } = await supabaseAdmin
+        .from('pf_providers')
+        .update({
+          review_summary: aiSummary.trim(),
+          review_summary_updated_at: new Date().toISOString(),
+        })
+        .eq('google_place_id', liveDetails?.place_id || placeId)
+
+      if (summaryUpdateError) {
+        throw summaryUpdateError
+      }
+    }
+  } catch (error) {
+    console.warn('[assistant-chat] provider enrichment persistence failed', {
+      placeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  try {
+    const { data: refreshedProvider } = await supabaseAdmin
+      .from('pf_providers')
+      .select('google_place_id, category, review_summary, breeds_specialised, breeds_general_inferred')
+      .eq('google_place_id', liveDetails?.place_id || placeId)
+      .maybeSingle()
+
+    const refreshedBreedTags = refreshedProvider
+      ? dedupeValues([
+          ...(refreshedProvider.breeds_specialised || []),
+          ...(refreshedProvider.breeds_general_inferred || []),
+        ])
+      : provider.breed_tags
+
+    return {
+      ...provider,
+      google_place_id: liveDetails?.place_id || provider.google_place_id || placeId,
+      category: formatCategoryLabel(refreshedProvider?.category || provider.category),
+      review_summary:
+        refreshedProvider?.review_summary?.trim() || aiSummary?.trim() || provider.review_summary,
+      breed_tags: refreshedBreedTags,
+    } satisfies AssistantProvider
+  } catch (error) {
+    console.warn('[assistant-chat] provider enrichment refresh failed', {
+      placeId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+
+    return {
+      ...provider,
+      google_place_id: liveDetails?.place_id || provider.google_place_id || placeId,
+      review_summary: aiSummary?.trim() || provider.review_summary,
+    }
+  }
+}
+
+async function enrichProvidersIfNeeded(request: Request, providers: AssistantProvider[]) {
+  return Promise.all(providers.map((provider) => enrichProviderIfNeeded(request, provider)))
 }
 
 function buildProviderContext(providers: AssistantProvider[]) {
@@ -433,11 +593,11 @@ export async function POST(request: Request) {
       })
     }
 
-    const providers = postcode
+    const nearbyProviders = postcode
       ? await fetchNearbyProviders(request, postcode)
       : await fetchNearbyProvidersByLocation(request, location!, lat!, lng!)
 
-    if (providers.length === 0) {
+    if (nearbyProviders.length === 0) {
       return NextResponse.json({
         reply:
           `I couldn't find any nearby PawFinder providers to compare in ${
@@ -448,6 +608,7 @@ export async function POST(request: Request) {
       })
     }
 
+    const providers = await enrichProvidersIfNeeded(request, nearbyProviders)
     const reply = await getAssistantReply(messages, locationContext, providers)
 
     return NextResponse.json({
