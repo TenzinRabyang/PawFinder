@@ -37,7 +37,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
 const ASSISTANT_LOCATION_SESSION_KEY = "pawfinder:assistant-location-context";
 const CHAT_SESSION_STORAGE_KEY = "pawfinder_chat_session";
 const CHAT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 18000;
 const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try again.";
 const DUPLICATE_MESSAGE_WARNING =
   "It looks like you've sent the same question! Please try rephrasing or asking something new.";
