@@ -524,15 +524,15 @@ export default function ChatBubble() {
   };
 
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[80] flex items-end justify-end sm:bottom-6 sm:right-6">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[80] flex items-end justify-end sm:bottom-6 sm:right-6">
       <div className="pointer-events-auto flex flex-col items-end gap-3">
         {isOpen ? (
           <section
             id="pawfinder-assistant-panel"
             aria-label="PawFinder Assistant"
-            className="pawfinder-fade-up w-[calc(100vw-2.5rem)] max-w-sm overflow-hidden rounded-[1.75rem] border border-[#DCD3BE] bg-[#FFFDFC] shadow-[0_30px_70px_-34px_rgba(32,38,31,0.42)]"
+            className="pawfinder-fade-up fixed bottom-24 left-4 right-4 z-[81] flex max-h-[calc(100vh-120px)] min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-[#DCD3BE] bg-[#FFFDFC] shadow-[0_30px_70px_-34px_rgba(32,38,31,0.42)] md:left-auto md:w-[400px]"
           >
-            <div className="border-b border-[#E8DECC] bg-[linear-gradient(180deg,rgba(250,247,241,0.96),rgba(255,253,252,0.98))] px-5 py-4">
+            <div className="shrink-0 border-b border-[#E8DECC] bg-[linear-gradient(180deg,rgba(250,247,241,0.96),rgba(255,253,252,0.98))] px-5 py-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-[#B14A2B]">
@@ -578,12 +578,12 @@ export default function ChatBubble() {
               </div>
             </div>
 
-            <div className="border-b border-[#EEE6D7] bg-[#FAF7F1]/88 px-5 py-2.5 text-xs uppercase tracking-[0.2em] text-[#7B8278]">
+            <div className="shrink-0 border-b border-[#EEE6D7] bg-[#FAF7F1]/88 px-5 py-2.5 text-xs uppercase tracking-[0.2em] text-[#7B8278]">
               {messageCountLabel}
             </div>
 
             {showResetConfirm ? (
-              <div className="border-b border-[#EEE6D7] bg-[#FFF7F2] px-5 py-4">
+              <div className="shrink-0 border-b border-[#EEE6D7] bg-[#FFF7F2] px-5 py-4">
                 <p className="text-sm font-medium leading-6 text-[#7A3E2C]">
                   Are you sure you want to permanently delete your chat history?
                 </p>
@@ -608,7 +608,7 @@ export default function ChatBubble() {
 
             <div
               ref={scrollContainerRef}
-              className="max-h-80 space-y-3 overflow-y-auto overscroll-contain bg-[linear-gradient(180deg,#FFFDFC_0%,#FAF7F1_100%)] px-4 py-4"
+              className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-[linear-gradient(180deg,#FFFDFC_0%,#FAF7F1_100%)] px-4 py-4"
             >
               {messages.map((message) => {
                 const isAssistant = message.role === "assistant";
@@ -658,7 +658,7 @@ export default function ChatBubble() {
               ) : null}
             </div>
 
-            <div className="border-t border-[#E9E0D1] bg-[#FFFDFC] p-4">
+            <div className="shrink-0 border-t border-[#E9E0D1] bg-[#FFFDFC] p-4">
               {isCollectingLocation ? (
                 <div className="rounded-[1.35rem] border border-[#E6DECD] bg-[#FFFCF8] p-3 shadow-[0_18px_34px_-28px_rgba(32,38,31,0.25)]">
                   <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#8C5B4D]">

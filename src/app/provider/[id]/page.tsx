@@ -104,6 +104,17 @@ type EnsureTagsResponse = {
   error?: string
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function isUuidLike(value: string) {
+  return UUID_PATTERN.test(value.trim())
+}
+
+function hasItems(value: unknown): value is unknown[] {
+  return Array.isArray(value) && value.length > 0
+}
+
 type ProviderPageBreedStatus =
   | BreedAnalysisStatus
   | 'idle'
@@ -433,15 +444,63 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         console.error('Failed to load current user for provider page', error)
       })
 
-    // Since 'id' is now the Google Place ID from the search page
-    // 1. Fetch live details from Google Places first
+    // Resolve either an internal provider UUID or a Google Place ID, then
+    // rehydrate live details only when the cached profile is still missing them.
     try {
-      let data: LiveDetailsRecord = cachedLiveDetails ? { ...cachedLiveDetails } : {}
-      let canonicalPlaceId =
-        typeof data.place_id === 'string' && data.place_id ? data.place_id : id
+      let dbProvider: ProviderProfileRecord | null = null
 
-      if (!cachedLiveDetails) {
-        const detailsUrl = `/api/providers/${encodeURIComponent(id)}/live-details?include_ai_summary=1`
+      if (isUuidLike(id)) {
+        const { data: providerByInternalId } = await supabase
+          .from('pf_providers')
+          .select('*')
+          .eq('id', id)
+          .maybeSingle()
+
+        dbProvider = (providerByInternalId as ProviderProfileRecord | null) || null
+      }
+
+      if (!dbProvider) {
+        const { data: providerByPlaceId } = await supabase
+          .from('pf_providers')
+          .select('*')
+          .eq('google_place_id', id)
+          .maybeSingle()
+
+        dbProvider = (providerByPlaceId as ProviderProfileRecord | null) || null
+      }
+
+      const canonicalPlaceId = dbProvider?.google_place_id || id
+      const canonicalCachedProfile = (
+        getProviderSessionCache(canonicalPlaceId)?.providerSnapshot as ProviderProfileRecord | undefined
+      ) || cachedProvider
+      const canonicalCachedLiveDetails = (
+        getProviderSessionCache(canonicalPlaceId)?.liveDetails as LiveDetailsRecord | undefined
+      ) || cachedLiveDetails
+      const canonicalCachedReviews = (
+        getProviderSessionCache(canonicalPlaceId)?.reviewsSnapshot as NativeReview[] | undefined
+      ) || cachedReviews
+
+      if (canonicalCachedProfile) {
+        setProvider(canonicalCachedProfile)
+        setBreedTagStatus(getBreedAnalysisStatus(canonicalCachedProfile))
+      }
+
+      if (canonicalCachedLiveDetails) {
+        setLiveDetails(canonicalCachedLiveDetails)
+      }
+
+      if (canonicalCachedReviews) {
+        setReviews(canonicalCachedReviews)
+      }
+
+      let data: LiveDetailsRecord = canonicalCachedLiveDetails ? { ...canonicalCachedLiveDetails } : {}
+      const shouldHydrateLiveDetails =
+        !canonicalCachedLiveDetails ||
+        !hasItems(canonicalCachedLiveDetails.photos) ||
+        !hasItems(canonicalCachedLiveDetails.reviews)
+
+      if (shouldHydrateLiveDetails) {
+        const detailsUrl = `/api/providers/${encodeURIComponent(canonicalPlaceId)}/live-details?include_ai_summary=1`
         let res: Response | null = null
         try {
           res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
@@ -457,36 +516,28 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           data = await res.json()
         }
 
-        canonicalPlaceId = typeof data.place_id === 'string' && data.place_id ? data.place_id : id
-
         if (res?.ok && !data.error) {
           setLiveDetails(data)
           syncProviderSessionCache({
-            placeId: canonicalPlaceId,
+            placeId: data.place_id || canonicalPlaceId,
             liveDetailsSnapshot: data,
           })
         }
       }
 
       // 2. Fetch our DB data (using google_place_id)
-      const { data: prov } = await supabase
-        .from('pf_providers')
-        .select('*')
-        .eq('google_place_id', canonicalPlaceId)
-        .maybeSingle()
-
-      const resolvedProvider: ProviderProfileRecord = prov
+      const resolvedProvider: ProviderProfileRecord = dbProvider
         ? {
-            ...prov,
-            google_place_id: canonicalPlaceId,
-            name: data.name || prov.name,
-            address: data.formatted_address || prov.address,
-            website: data.website || prov.website,
-            phone: data.formatted_phone_number || prov.phone,
+            ...dbProvider,
+            google_place_id: data.place_id || canonicalPlaceId,
+            name: data.name || dbProvider.name,
+            address: data.formatted_address || dbProvider.address,
+            website: data.website || dbProvider.website,
+            phone: data.formatted_phone_number || dbProvider.phone,
           }
         : {
-            id: canonicalPlaceId,
-            google_place_id: canonicalPlaceId,
+            id,
+            google_place_id: data.place_id || canonicalPlaceId,
             name: data.name || 'Unknown Provider',
             address: data.formatted_address || '',
             category:
@@ -538,26 +589,36 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       ) {
         setBreedTagStatus(currentAnalysisStatus)
       } else if (providerWebsite) {
-        void refreshSavedProviderAnalysis(canonicalPlaceId, resolvedProvider, providerWebsite, data)
+        void refreshSavedProviderAnalysis(
+          resolvedProvider.google_place_id || canonicalPlaceId,
+          resolvedProvider,
+          providerWebsite,
+          data
+        )
       } else if (shouldRetryPhotoAnalysis) {
-        void refreshSavedProviderAnalysis(canonicalPlaceId, resolvedProvider, null, data)
+        void refreshSavedProviderAnalysis(
+          resolvedProvider.google_place_id || canonicalPlaceId,
+          resolvedProvider,
+          null,
+          data
+        )
       } else {
         setBreedTagStatus(currentAnalysisStatus)
       }
       setProvider(resolvedProvider)
       syncProviderSessionCache({
-        placeId: canonicalPlaceId,
+        placeId: resolvedProvider.google_place_id || canonicalPlaceId,
         providerSnapshot: resolvedProvider,
-        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails || undefined,
+        liveDetailsSnapshot: !data.error ? data : canonicalCachedLiveDetails || undefined,
       })
 
       let resolvedReviews: NativeReview[] = []
-      if (resolvedProvider.id !== id) {
-        // Fetch native pf_reviews using our internal DB ID
+      if (dbProvider?.id) {
+        // Fetch native pf_reviews using the canonical internal DB ID
         const { data: revs } = await supabase
           .from('pf_reviews')
           .select('*')
-          .eq('provider_id', resolvedProvider.id)
+          .eq('provider_id', dbProvider.id)
           .order('created_at', { ascending: false })
 
         const reviewRows = (revs || []) as NativeReview[]
@@ -588,10 +649,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       }
 
       syncProviderSessionCache({
-        placeId: canonicalPlaceId,
+        placeId: resolvedProvider.google_place_id || canonicalPlaceId,
         providerSnapshot: resolvedProvider,
-        liveDetailsSnapshot: !data.error ? data : cachedLiveDetails || undefined,
-        reviewsSnapshot: resolvedProvider.id !== id ? resolvedReviews : [],
+        liveDetailsSnapshot: !data.error ? data : canonicalCachedLiveDetails || undefined,
+        reviewsSnapshot: dbProvider?.id ? resolvedReviews : [],
       })
     } catch (error) {
       console.error(error)
