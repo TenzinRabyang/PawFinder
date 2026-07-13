@@ -543,6 +543,7 @@ function buildProviderContext(providers: AssistantProvider[]) {
   return providers
     .map(
       (provider, index) => `Business ${index + 1}
+Provider ID: ${provider.id}
 Name: ${provider.name}
 Category: ${provider.category || 'Unknown'}
 Address: ${provider.address || 'Unknown'}
@@ -576,6 +577,7 @@ async function getAssistantReply(
         `Rule (Cold-Start Transparency): "If a business has a pre-baked 'review_summary' or breed tags, use that data to prove specific fit. If those fields are blank, look at its general Google rating and total review count. Explicitly tell the user: 'This business is new to PawFinder so our community hasn't logged specific breed feedback yet, but they hold a [Rating]-star score on Google across [Count] reviews, making them a great option to look into.'"`,
         `Rule (Honest Failure): "If absolutely none of the 5 options match what the user is looking for, tell them completely honestly that no perfect matches exist in this postcode, explain what is missing, and suggest the closest general alternative."`,
         `CRITICAL REJECTION RULE: If the user message asks for general-purpose AI tasks completely unrelated to pets, animals, or UK business directory services (e.g., writing software code, translation, mathematical puzzles, general essays, or creative writing prompts), you must immediately reject it. Respond ONLY with this exact sentence: 'I am your PawFinder assistant and can only help with pet care queries and local UK business matching. How can I help you find a pet service today?' Do not process or generate any additional content.`,
+        `When recommending a business, you MUST format its title link exactly like this: [Business Name](provider:UUID_HERE) so the frontend can render it as an interactive element. Replace UUID_HERE with the exact Provider ID from the PawFinder business list. Keep your descriptions for each business short, punchy, and concise (max 2 sentences per business) highlighting why it fits or honestly why it doesn't.`,
         'Use only the businesses and facts provided by PawFinder.',
         'Do not invent breed feedback, review summaries, facilities, or specialties.',
         'If a provider has review_summary or breed_tags, use them as your strongest proof of fit.',
