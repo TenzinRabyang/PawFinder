@@ -143,6 +143,7 @@ function validateIncomingMessages(input: unknown) {
       throw new AssistantRouteError('Each message must be an object.', 400, true)
     }
 
+    const role = (message as { role?: unknown }).role
     const content = typeof (message as { content?: unknown }).content === 'string'
       ? (message as { content: string }).content
       : null
@@ -151,7 +152,7 @@ function validateIncomingMessages(input: unknown) {
       throw new AssistantRouteError('Each message must include text content.', 400, true)
     }
 
-    if (content.length > MAX_MESSAGE_LENGTH) {
+    if (role === 'user' && content.length > MAX_MESSAGE_LENGTH) {
       throw new AssistantRouteError(
         `Messages cannot exceed ${MAX_MESSAGE_LENGTH} characters.`,
         400,
@@ -658,8 +659,8 @@ export async function POST(request: Request) {
       lng?: unknown
     }
 
-    validateIncomingMessages(parsedBody.messages)
     const messages = normalizeMessages(parsedBody.messages)
+    validateIncomingMessages(messages)
     const postcode =
       typeof parsedBody.postcode === 'string' && parsedBody.postcode.trim().length > 0
         ? normalizePostcode(parsedBody.postcode)

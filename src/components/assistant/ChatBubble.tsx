@@ -529,6 +529,7 @@ export default function ChatBubble() {
                         type="text"
                         value={draft}
                         onChange={(event) => setDraft(event.target.value)}
+                        maxLength={1000}
                         placeholder="Describe the care you need..."
                         disabled={isLoading}
                         className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
