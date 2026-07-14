@@ -1,6 +1,4 @@
-import Link from "next/link";
 import {
-  ArrowRight,
   Cat,
   Dog,
   MapPin,
@@ -12,6 +10,7 @@ import {
 } from "lucide-react";
 import EditorialPhoto from "@/components/home/EditorialPhoto";
 import HomeSearchCard from "@/components/home/HomeSearchCard";
+import ScrollToSearchButton from "@/components/home/ScrollToSearchButton";
 
 export const dynamic = "force-dynamic";
 
@@ -33,22 +32,18 @@ const homepageValueCards = [
 const petCategories = [
   {
     label: "Dogs",
-    href: "/search?animal=dog",
     Icon: Dog,
   },
   {
     label: "Cats",
-    href: "/search?animal=cat",
     Icon: Cat,
   },
   {
     label: "Rabbits",
-    href: "/search?animal=rabbit",
     Icon: Rabbit,
   },
   {
     label: "Small pets",
-    href: "/search?animal=small%20pet",
     Icon: PawPrint,
   },
 ];
@@ -89,14 +84,14 @@ const serviceCards = [
 export default async function Home() {
   return (
     <div className="min-h-screen overflow-hidden bg-[#FAF7F1] text-[#20261F]">
-      <section className="relative overflow-hidden pb-16 pt-10 sm:pb-20 sm:pt-14">
+      <section className="relative overflow-hidden pb-12 pt-6 sm:pb-20 sm:pt-14">
         <div className="absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(circle_at_top,_rgba(177,74,43,0.09),_transparent_52%)]" />
         <div className="absolute left-[-8rem] top-28 h-56 w-56 rounded-full bg-[#E4E7DA] blur-3xl" />
         <div className="absolute right-[-6rem] top-10 h-60 w-60 rounded-full bg-[#F0DFD7] blur-3xl" />
 
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl">
-            <div className="mb-10">
+            <div className="mb-7 sm:mb-10">
               <div className="relative mx-auto max-w-4xl">
                 <div className="overflow-hidden rounded-[2rem] border border-[#DCD3BE] bg-[#F4EEE4] shadow-[0_28px_60px_-34px_rgba(32,38,31,0.4)]">
                   <EditorialPhoto
@@ -104,21 +99,21 @@ export default async function Home() {
                     alt="A woman cuddling a beagle."
                     imageSize="landscape_16_9"
                     fallbackPrompt="warm realistic editorial pet care photograph, close portrait of a young woman cuddling a calm beagle outdoors, soft natural light, intimate emotional moment, premium homepage hero image, shallow depth of field"
-                    className="h-[320px] w-full object-cover sm:h-[420px] lg:h-[500px]"
+                    className="h-[280px] w-full object-cover sm:h-[420px] lg:h-[500px]"
                     priority
                   />
                 </div>
 
-                <div className="absolute bottom-4 right-4 w-[14.5rem] rotate-[-3deg] rounded-[1.4rem] border border-[#E7DDCA] bg-[#FFFCF8] p-4 shadow-[0_24px_45px_-28px_rgba(32,38,31,0.5)] sm:bottom-6 sm:right-6 sm:w-[16rem]">
+                <div className="absolute bottom-3 right-3 w-[12.5rem] rotate-[-3deg] rounded-[1.25rem] border border-[#E7DDCA] bg-[#FFFCF8] p-3 shadow-[0_24px_45px_-28px_rgba(32,38,31,0.5)] sm:bottom-6 sm:right-6 sm:w-[16rem] sm:rounded-[1.4rem] sm:p-4">
                   <div className="mb-2 flex items-center gap-1 text-[#B14A2B]">
                     {Array.from({ length: 5 }).map((_, index) => (
                       <Star key={index} className="h-4 w-4 fill-current" />
                     ))}
                   </div>
-                  <p className="text-sm leading-6 text-[#20261F]">
+                  <p className="text-xs leading-5 text-[#20261F] sm:text-sm sm:leading-6">
                     “The first sitter who actually asked about our rescue dog’s triggers before the meet-and-greet.”
                   </p>
-                  <div className="mt-3 border-t border-[#EFE5D3] pt-3 text-xs uppercase tracking-[0.16em] text-[#4A5147]">
+                  <div className="mt-2 border-t border-[#EFE5D3] pt-2 text-[10px] uppercase tracking-[0.14em] text-[#4A5147] sm:mt-3 sm:pt-3 sm:text-xs sm:tracking-[0.16em]">
                     Imogen, Crookes · Beagle owner
                   </div>
                 </div>
@@ -126,21 +121,21 @@ export default async function Home() {
             </div>
 
             <div className="mx-auto max-w-3xl text-center">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-[0.26em] text-[#B14A2B] sm:text-sm">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-[#B14A2B] sm:mb-4 sm:text-sm">
                 Local pet care, chosen with more context
               </p>
               <h1 className="mx-auto max-w-3xl font-display text-[2.125rem] leading-[1.02] tracking-[-0.035em] text-[#20261F] sm:text-[3.2rem] lg:text-[4rem]">
                 Find <span className="italic text-[#B14A2B]">vetted</span> care that fits your pet, your postcode, and your routine.
               </h1>
-              <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#4A5147] sm:text-lg">
+              <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-6 text-[#4A5147] sm:mt-5 sm:text-lg sm:leading-7">
                 Search trusted vets, groomers, walkers, and sitters near you, with the kind of owner context that makes decisions easier.
               </p>
-              <div className="mx-auto mt-10 max-w-2xl">
-                <HomeSearchCard />
+              <div className="mx-auto mt-7 max-w-2xl sm:mt-10">
+                <HomeSearchCard inputId="homepage-search-input" />
               </div>
             </div>
 
-            <div className="mx-auto mt-6 max-w-3xl rounded-[1.7rem] border border-[#DCD3BE] bg-white/80 p-3 shadow-[0_16px_36px_-28px_rgba(32,38,31,0.35)] backdrop-blur">
+            <div className="mx-auto mt-5 max-w-3xl rounded-[1.7rem] border border-[#DCD3BE] bg-white/80 p-3 shadow-[0_16px_36px_-28px_rgba(32,38,31,0.35)] backdrop-blur sm:mt-6">
               <div className="grid gap-2 sm:grid-cols-3">
                 {homepageValueCards.map((card) => (
                   <div
@@ -172,17 +167,16 @@ export default async function Home() {
 
           <div className="-mx-4 mt-8 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
             <div className="flex min-w-max gap-3">
-              {petCategories.map(({ label, href, Icon }) => (
-                <Link
+              {petCategories.map(({ label, Icon }) => (
+                <div
                   key={label}
-                  href={href}
-                  className="pressable-soft inline-flex items-center gap-3 rounded-full border border-[#DCD3BE] bg-[#E4E7DA] px-4 py-3 text-sm font-medium text-[#20261F] transition hover:border-[#C5B89E] hover:bg-[#DCE1CD]"
+                  className="inline-flex cursor-default items-center gap-3 rounded-full border border-[#DCD3BE] bg-[#E4E7DA] px-4 py-3 text-sm font-medium text-[#20261F]"
                 >
                   <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#6E7C5B]">
                     <Icon className="h-5 w-5" />
                   </span>
                   <span className="pr-1 text-base">{label}</span>
-                </Link>
+                </div>
               ))}
             </div>
           </div>
@@ -226,13 +220,12 @@ export default async function Home() {
                         {card.title}
                       </h3>
                       <p className="mt-3 flex-1 text-sm leading-7 text-[#4A5147]">{card.copy}</p>
-                      <Link
-                        href="/search"
+                      <ScrollToSearchButton
+                        targetId="homepage-search-input"
                         className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#B14A2B] transition hover:text-[#943920]"
                       >
                         Browse providers
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
+                      </ScrollToSearchButton>
                     </div>
                   </article>
                 );

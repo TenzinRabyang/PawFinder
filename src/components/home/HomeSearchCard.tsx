@@ -4,7 +4,13 @@ import LocationSearchControl, {
   type LocationSearchContext,
 } from "@/components/location/LocationSearchControl";
 
-export default function HomeSearchCard() {
+type HomeSearchCardProps = {
+  inputId?: string;
+};
+
+export default function HomeSearchCard({
+  inputId = "homepage-search-input",
+}: HomeSearchCardProps) {
   const handleResolvedLocation = async (context: LocationSearchContext) => {
     if (context.kind === "place") {
       const params = new URLSearchParams({
@@ -40,7 +46,7 @@ export default function HomeSearchCard() {
   return (
     <div className="rounded-[2rem] border border-[#DCD3BE] bg-white p-4 shadow-[0_20px_50px_-30px_rgba(32,38,31,0.35)] sm:p-5">
       <LocationSearchControl
-        id="homepage-location"
+        id={inputId}
         label="Search your area"
         submitLabel="Find care near me"
         onResolved={handleResolvedLocation}
