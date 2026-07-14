@@ -33,14 +33,7 @@ type StoredChatSession = {
   messages: ChatMessage[];
 };
 
-const INITIAL_MESSAGES: ChatMessage[] = [
-  {
-    id: "assistant-welcome",
-    role: "assistant",
-    content:
-      "Hi, I can help you narrow things down. Try asking for needs like a calm waiting room, gentle handling, or breed-specific experience.",
-  },
-];
+const INITIAL_MESSAGES: ChatMessage[] = [];
 
 const ASSISTANT_LOCATION_SESSION_KEY = "pawfinder:assistant-location-context";
 const CHAT_SESSION_STORAGE_KEY = "pawfinder_chat_session";
@@ -50,6 +43,11 @@ const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try 
 const DUPLICATE_MESSAGE_WARNING =
   "It looks like you've sent the same question! Please try rephrasing or asking something new.";
 const PROVIDER_LINK_REGEX = /\[([^\]]+)\]\(provider:([^)]+)\)/g;
+const QUICK_STARTER_CHIPS = [
+  "Vets in Sheffield",
+  "Cattery nearby",
+  "Dog walkers",
+];
 
 type MessageSegment =
   | { type: "text"; value: string }
@@ -277,11 +275,6 @@ export default function ChatBubble() {
     }
   })();
 
-  const messageCountLabel = useMemo(() => {
-    const count = messages.length;
-    return count === 1 ? "1 note" : `${count} notes`;
-  }, [messages.length]);
-
   const activeLocationLabel = useMemo(() => {
     if (!activeLocationContext) return null;
 
@@ -289,6 +282,7 @@ export default function ChatBubble() {
       ? `Using postcode ${activeLocationContext.postcode}`
       : `Using area ${activeLocationContext.label}`;
   }, [activeLocationContext]);
+  const hasConversation = messages.length > 0;
 
   const sendConversation = async (
     conversationMessages: ChatMessage[],
@@ -363,8 +357,8 @@ export default function ChatBubble() {
     }
   };
 
-  const handleSend = async () => {
-    const trimmedDraft = draft.trim();
+  const submitMessage = async (rawDraft: string) => {
+    const trimmedDraft = rawDraft.trim();
 
     if (!trimmedDraft || isLoading) return;
     setShowResetConfirm(false);
@@ -419,6 +413,15 @@ export default function ChatBubble() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = async () => {
+    await submitMessage(draft);
+  };
+
+  const handleQuickStarter = async (starter: string) => {
+    setDraft(starter);
+    await submitMessage(starter);
   };
 
   const handleResolvedLocation = async (nextLocationContext: LocationSearchContext) => {
@@ -532,39 +535,31 @@ export default function ChatBubble() {
             aria-label="PawFinder Assistant"
             className="pawfinder-fade-up fixed top-16 bottom-24 left-4 right-4 z-[81] flex min-h-0 flex-col overflow-hidden rounded-[1.75rem] border border-[#DCD3BE] bg-[#FFFDFC] shadow-[0_30px_70px_-34px_rgba(32,38,31,0.42)] md:top-auto md:bottom-28 md:left-auto md:w-[400px] md:h-[600px] md:max-h-[80vh]"
           >
-            <div className="shrink-0 border-b border-[#E8DECC] bg-[linear-gradient(180deg,rgba(250,247,241,0.96),rgba(255,253,252,0.98))] px-5 py-4">
-              <div className="flex items-start justify-between gap-4">
+            <div className="shrink-0 border-b border-[#E8DECC] bg-[linear-gradient(180deg,rgba(250,247,241,0.96),rgba(255,253,252,0.98))] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[#B14A2B]">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F3E0D9]">
-                      <Sparkles className="h-4 w-4" />
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F3E0D9] text-[#B14A2B]">
+                      <Sparkles className="h-3.5 w-3.5" />
                     </span>
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-[#8C5B4D]">
-                      Local Search Help
-                    </p>
+                    <div className="min-w-0">
+                      <h2 className="truncate font-display text-lg leading-none tracking-[-0.03em] text-[#20261F]">
+                        PawFinder Assistant
+                      </h2>
+                      <p className="mt-1 truncate text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7B8278]">
+                        {activeLocationLabel || "History saved for 24 hours"}
+                      </p>
+                    </div>
                   </div>
-                  <h2 className="mt-3 font-display text-[1.45rem] leading-none tracking-[-0.03em] text-[#20261F]">
-                    PawFinder Assistant
-                  </h2>
-                  <p className="mt-2 max-w-[18rem] text-sm leading-6 text-[#5B6258]">
-                    Ask for specific conditions, e.g., &quot;vets with a quiet waiting area&quot;.
-                  </p>
-                  <p className="mt-2 font-sans text-[0.78rem] leading-5 text-[#6C7468]">
-                    History saved on device for 24 hours.
-                  </p>
-                  <p className="mt-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#7B8278]">
-                    {activeLocationLabel || "Ask first, then add your postcode or city when needed"}
-                  </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setShowResetConfirm((currentValue) => !currentValue)}
-                    className="inline-flex h-9 items-center gap-2 rounded-full border border-[#E6DECD] bg-white px-3 text-[#8C5B4D] transition hover:border-[#D0C4AE] hover:text-[#20261F]"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#E6DECD] bg-white text-[#8C5B4D] transition hover:border-[#D0C4AE] hover:text-[#20261F]"
                     aria-label="Reset chat history"
                   >
                     <Trash2 className="h-4 w-4" />
-                    <span className="text-xs font-semibold uppercase tracking-[0.14em]">Reset</span>
                   </button>
                   <button
                     type="button"
@@ -576,10 +571,6 @@ export default function ChatBubble() {
                   </button>
                 </div>
               </div>
-            </div>
-
-            <div className="shrink-0 border-b border-[#EEE6D7] bg-[#FAF7F1]/88 px-5 py-2.5 text-xs uppercase tracking-[0.2em] text-[#7B8278]">
-              {messageCountLabel}
             </div>
 
             {showResetConfirm ? (
@@ -608,34 +599,70 @@ export default function ChatBubble() {
 
             <div
               ref={scrollContainerRef}
-              className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-[linear-gradient(180deg,#FFFDFC_0%,#FAF7F1_100%)] px-4 py-4"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[linear-gradient(180deg,#FFFDFC_0%,#FAF7F1_100%)] px-4 py-4"
             >
-              {messages.map((message) => {
-                const isAssistant = message.role === "assistant";
-
-                return (
-                  <div
-                    key={message.id}
-                    className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
-                  >
-                    <div
-                      className={`max-w-[85%] rounded-[1.35rem] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_-20px_rgba(32,38,31,0.38)] ${
-                        isAssistant
-                          ? "border border-[#E4DBCA] bg-[#FFF8F1] text-[#394136]"
-                          : "border border-[#7F8A72] bg-[#6E7C5B] text-[#FDFBF7]"
-                      }`}
-                    >
-                      <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.2em] opacity-75">
-                        {isAssistant ? "Assistant" : "You"}
-                      </p>
-                      {renderMessageBody(message)}
+              {!hasConversation && !isLoading ? (
+                <div className="flex min-h-full items-center justify-center">
+                  <div className="w-full max-w-sm rounded-[1.6rem] border border-[#E6DCCD] bg-[#FFFCF8] p-5 text-center shadow-[0_18px_34px_-28px_rgba(32,38,31,0.25)]">
+                    <p className="font-display text-[1.35rem] tracking-[-0.03em] text-[#20261F]">
+                      PawFinder Assistant
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[#5B6258]">
+                      Ask me anything about local pet care services.
+                    </p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      {QUICK_STARTER_CHIPS.map((starter) => (
+                        <button
+                          key={starter}
+                          type="button"
+                          onClick={() => {
+                            void handleQuickStarter(starter);
+                          }}
+                          disabled={isLoading}
+                          className="rounded-full border border-[#DED3C5] bg-white px-3 py-2 text-xs font-semibold text-[#5B6258] transition hover:border-[#B14A2B] hover:text-[#B14A2B] disabled:cursor-not-allowed disabled:opacity-70"
+                        >
+                          {starter === "Vets in Sheffield"
+                            ? "🐶 Vets in Sheffield"
+                            : starter === "Cattery nearby"
+                              ? "🐱 Cattery nearby"
+                              : "🦮 Dog walkers"}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {messages.map((message) => {
+                    const isAssistant = message.role === "assistant";
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-[1.35rem] px-4 py-3 text-sm leading-6 shadow-[0_12px_24px_-20px_rgba(32,38,31,0.38)] ${
+                            isAssistant
+                              ? "border border-[#E4DBCA] bg-[#FFF8F1] text-[#394136]"
+                              : "border border-[#7F8A72] bg-[#6E7C5B] text-[#FDFBF7]"
+                          }`}
+                        >
+                          <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.2em] opacity-75">
+                            {isAssistant ? "Assistant" : "You"}
+                          </p>
+                          {renderMessageBody(message)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {isLoading ? (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-[1.35rem] border border-[#E4DBCA] bg-[#FFF8F1] px-4 py-3 text-sm leading-6 text-[#394136] shadow-[0_12px_24px_-20px_rgba(32,38,31,0.38)]">
+                <div className="mt-3 flex justify-start">
+                  <div
+                    className="max-w-[85%] rounded-[1.35rem] border border-[#E4DBCA] bg-[#FFF8F1] px-4 py-3 text-sm leading-6 text-[#394136] shadow-[0_12px_24px_-20px_rgba(32,38,31,0.38)]"
+                  >
                     <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.2em] opacity-75">
                       Assistant
                     </p>
