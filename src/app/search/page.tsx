@@ -44,6 +44,14 @@ type FeaturedEnrichmentResponse = {
   live_details?: Record<string, unknown>
 } & Partial<SearchProvider>
 
+type LocationSuggestion = {
+  description: string
+  place_id: string
+}
+
+const LOCATION_REQUEST_TIMEOUT_MS = 15000
+const POSTCODE_REGEX = /^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/i
+
 function SearchContent() {
   const RESULTS_PAGE_SIZE = 5
   const router = useRouter()
@@ -67,6 +75,8 @@ function SearchContent() {
   const [loading, setLoading] = useState(true)
 
   const [error, setError] = useState<string | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [isApplyingFilters, setIsApplyingFilters] = useState(false)
   const [featuredLoadStatus, setFeaturedLoadStatus] = useState<Record<string, FeaturedLoadStatus>>({})
   const [visibleCount, setVisibleCount] = useState(RESULTS_PAGE_SIZE)
   const lastAutoFetchKeyRef = useRef<string | null>(null)
@@ -89,6 +99,9 @@ function SearchContent() {
 
     return 'distance'
   }, [searchParams])
+  const [draftCategory, setDraftCategory] = useState(filters.category)
+  const [draftBreed, setDraftBreed] = useState(filters.breed)
+  const [draftLocation, setDraftLocation] = useState(selectedLocationLabel || filters.postcode)
 
   const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
   const getErrorName = (error: unknown) => (error instanceof Error ? error.name : '')
@@ -212,6 +225,13 @@ function SearchContent() {
     }
   }, [fetchProviders, filters, selectedLat, selectedLng])
 
+  useEffect(() => {
+    setDraftCategory(filters.category)
+    setDraftBreed(filters.breed)
+    setDraftLocation(selectedLocationLabel || filters.postcode)
+    setLocationError(null)
+  }, [filters.breed, filters.category, filters.postcode, selectedLocationLabel])
+
   const updateSearchUrl = ({
     nextFilters = filters,
     nextSortBy = sortBy,
@@ -249,6 +269,131 @@ function SearchContent() {
       },
     })
   }
+
+  const resolveLocationDraft = useCallback(async (rawLocation: string) => {
+    const trimmedLocation = rawLocation.trim()
+
+    if (!trimmedLocation) {
+      return {
+        postcode: '',
+        location: '',
+        lat: '',
+        lng: '',
+      }
+    }
+
+    if (POSTCODE_REGEX.test(trimmedLocation)) {
+      return {
+        postcode: trimmedLocation.toUpperCase().replace(/\s+/g, ''),
+        location: '',
+        lat: '',
+        lng: '',
+      }
+    }
+
+    const autocompleteController = new AbortController()
+    const autocompleteResponse = await fetch(
+      `/api/location-autocomplete?input=${encodeURIComponent(trimmedLocation)}`,
+      {
+        cache: 'no-store',
+        signal: autocompleteController.signal,
+      }
+    )
+
+    if (!autocompleteResponse.ok) {
+      throw new Error('Location suggestions are unavailable right now.')
+    }
+
+    const autocompletePayload = (await autocompleteResponse.json()) as {
+      suggestions?: LocationSuggestion[]
+    }
+    const firstSuggestion = Array.isArray(autocompletePayload.suggestions)
+      ? autocompletePayload.suggestions[0]
+      : null
+
+    if (!firstSuggestion?.place_id || !firstSuggestion.description) {
+      throw new Error('Please enter a UK town, city, or full postcode.')
+    }
+
+    const detailsResponse = await fetch(
+      `/api/location-details?placeId=${encodeURIComponent(firstSuggestion.place_id)}`,
+      {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(LOCATION_REQUEST_TIMEOUT_MS),
+      }
+    )
+
+    if (!detailsResponse.ok) {
+      throw new Error('We could not prepare that location. Please try again.')
+    }
+
+    const detailsPayload = (await detailsResponse.json()) as {
+      lat?: number
+      lng?: number
+    }
+
+    if (
+      typeof detailsPayload.lat !== 'number' ||
+      typeof detailsPayload.lng !== 'number'
+    ) {
+      throw new Error('We could not prepare that location. Please try again.')
+    }
+
+    return {
+      postcode: '',
+      location: firstSuggestion.description,
+      lat: String(detailsPayload.lat),
+      lng: String(detailsPayload.lng),
+    }
+  }, [])
+
+  const handleApplyFilters = useCallback(async () => {
+    setLocationError(null)
+    setVisibleCount(RESULTS_PAGE_SIZE)
+    lastAutoFetchKeyRef.current = null
+    setIsApplyingFilters(true)
+
+    try {
+      const resolvedLocation = await resolveLocationDraft(draftLocation)
+      const nextParams = new URLSearchParams(searchParams.toString())
+
+      if (draftCategory) {
+        nextParams.set('category', draftCategory)
+      } else {
+        nextParams.delete('category')
+      }
+
+      if (draftBreed) {
+        nextParams.set('breed', draftBreed)
+      } else {
+        nextParams.delete('breed')
+      }
+
+      if (resolvedLocation.postcode) {
+        nextParams.set('postcode', resolvedLocation.postcode)
+        nextParams.delete('location')
+        nextParams.delete('lat')
+        nextParams.delete('lng')
+      } else if (resolvedLocation.location && resolvedLocation.lat && resolvedLocation.lng) {
+        nextParams.set('location', resolvedLocation.location)
+        nextParams.set('lat', resolvedLocation.lat)
+        nextParams.set('lng', resolvedLocation.lng)
+        nextParams.delete('postcode')
+      } else {
+        nextParams.delete('postcode')
+        nextParams.delete('location')
+        nextParams.delete('lat')
+        nextParams.delete('lng')
+      }
+
+      const nextQuery = nextParams.toString()
+      router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
+    } catch (applyError) {
+      setLocationError(applyError instanceof Error ? applyError.message : 'Unable to update the search area.')
+    } finally {
+      setIsApplyingFilters(false)
+    }
+  }, [draftBreed, draftCategory, draftLocation, pathname, resolveLocationDraft, router, searchParams])
 
   const handleSortChange = (value: SortOption) => {
     setVisibleCount(RESULTS_PAGE_SIZE)
@@ -393,12 +538,29 @@ function SearchContent() {
             <h2 className="text-base font-semibold text-stone-800">Filters</h2>
           </div>
           
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+            <div>
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">Location</label>
+              <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 focus-within:border-[#829e8d] focus-within:bg-white focus-within:ring-1 focus-within:ring-[#829e8d]">
+                <MapPin className="h-4 w-4 flex-shrink-0 text-stone-400" />
+                <input
+                  type="text"
+                  value={draftLocation}
+                  onChange={(e) => {
+                    setDraftLocation(e.target.value)
+                    setLocationError(null)
+                  }}
+                  placeholder="City, town, or postcode"
+                  className="w-full bg-transparent text-sm text-stone-700 outline-none placeholder:text-stone-400"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">Category</label>
               <select 
-                value={filters.category}
-                onChange={(e) => handleFilterChange('category', e.target.value)}
+                value={draftCategory}
+                onChange={(e) => setDraftCategory(e.target.value)}
                 className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
               >
                 <option value="">All Categories</option>
@@ -414,8 +576,8 @@ function SearchContent() {
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">Breed</label>
               <select 
-                value={filters.breed}
-                onChange={(e) => handleFilterChange('breed', e.target.value)}
+                value={draftBreed}
+                onChange={(e) => setDraftBreed(e.target.value)}
                 className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
               >
                 <option value="">All Breeds</option>
@@ -445,14 +607,23 @@ function SearchContent() {
 
             <div>
               <button 
-                onClick={fetchProviders}
-                className="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 md:w-auto md:min-w-[126px]"
+                onClick={() => {
+                  void handleApplyFilters()
+                }}
+                disabled={isApplyingFilters}
+                className="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400 md:w-auto md:min-w-[126px]"
               >
-                Apply
+                {isApplyingFilters ? 'Applying...' : 'Apply'}
               </button>
             </div>
             
-            <p className="text-[11px] leading-relaxed text-stone-400 md:col-span-4 md:pt-1">
+            {locationError && (
+              <p className="text-[11px] leading-relaxed text-[#B14A2B] md:col-span-5">
+                {locationError}
+              </p>
+            )}
+
+            <p className="text-[11px] leading-relaxed text-stone-400 md:col-span-5 md:pt-1">
               Filter results are most accurate for verified providers. Unclaimed businesses are included by default.
             </p>
           </div>

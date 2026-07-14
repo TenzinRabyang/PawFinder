@@ -1067,13 +1067,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         )}
                       </div>
                     ) : (
-                      <div className="rounded-[1.35rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-5">
-                        <div className="text-sm font-medium text-[#585850]">
-                          {getBreedStatusMessage(breedTagStatus)}
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-[#938E86]">
-                          Breed tags appear here after they have been confirmed and saved from automatic analysis.
-                        </p>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full border border-[#DED4C6] bg-[#FFFDF8] px-3 py-1.5 text-sm font-medium text-[#5F5A52]">
+                          🐾 Contact provider for details
+                        </span>
                       </div>
                     )}
                   </div>
