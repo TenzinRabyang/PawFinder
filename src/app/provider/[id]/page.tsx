@@ -223,6 +223,33 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       .map((part) => part.charAt(0).toUpperCase())
       .join('')
 
+  const renderFilledStars = (
+    rating: number | null | undefined,
+    {
+      sizeClassName = 'h-4 w-4',
+      filledClassName = 'fill-amber-400 text-amber-400',
+      emptyClassName = 'text-[#D9C8A6]',
+    }: {
+      sizeClassName?: string
+      filledClassName?: string
+      emptyClassName?: string
+    } = {}
+  ) => {
+    const safeRating = typeof rating === 'number' && Number.isFinite(rating) ? rating : 0
+    const filledStars = Math.max(0, Math.min(5, Math.round(safeRating)))
+
+    return (
+      <div className="flex items-center gap-1" aria-label={`${filledStars} out of 5 stars`}>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <Star
+            key={`star-${filledStars}-${index}`}
+            className={`${sizeClassName} ${index < filledStars ? filledClassName : emptyClassName}`}
+          />
+        ))}
+      </div>
+    )
+  }
+
   const breedLabelMap = new Map<string, string>(BREED_OPTIONS.map((breed) => [breed.value, breed.label]))
   const breedAnimalMap = new Map<string, string>(BREED_OPTIONS.map((breed) => [breed.value, breed.animal]))
   const getBreedLabel = (value: string) => breedLabelMap.get(value) || formatServiceLabel(value)
@@ -793,7 +820,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
   const locationLabel = provider.address || provider.postcode || 'Address unavailable'
   const hasWebsiteForAnalysis = Boolean((provider.website || liveDetails?.website || '').trim())
-  const generalCoverageHeading = hasWebsiteForAnalysis ? 'Inferred from website' : 'Inferred from photos'
+  const consolidatedBreedBadges = Array.from(
+    new Map(
+      [
+        ...displayedBreedValues.map((breed) => getBreedLabel(breed)),
+        ...generalCoverageLabels,
+        ...supportedAnimalLabels,
+      ]
+        .map((label) => label.trim())
+        .filter(Boolean)
+        .map((label) => [label.toLowerCase(), label])
+    ).values()
+  )
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
@@ -857,19 +895,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         </span>
                         <span className="text-sm font-semibold text-[#8E6A20]/80">/ 5</span>
                       </div>
+                      <div className="mt-2">
+                        {renderFilledStars(liveDetails?.rating, {
+                          sizeClassName: 'h-4 w-4',
+                          filledClassName: 'fill-amber-400 text-amber-400',
+                          emptyClassName: 'text-[#D9C8A6]',
+                        })}
+                      </div>
                     </div>
                     <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
                       {typeof liveDetails?.user_ratings_total === 'number'
                         ? `${liveDetails.user_ratings_total} reviews`
                         : 'Live'}
-                    </span>
-                  </div>
-
-                  <div className="inline-flex items-center rounded-full border border-[#3D5A45]/15 bg-[#3D5A45]/10 px-4 py-2 text-sm font-semibold text-[#3D5A45] shadow-sm">
-                    <Star className="mr-2 h-4 w-4 fill-current" />
-                    {nativeRatingSummary ? `${nativeRatingSummary.score}/5` : 'No native reviews yet'}
-                    <span className="ml-2 text-xs font-medium text-[#3D5A45]/80">
-                      {nativeRatingSummary ? `(${nativeRatingSummary.count}) Verified Reviews` : 'Verified Reviews'}
                     </span>
                   </div>
                 </div>
@@ -1006,65 +1043,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                           </div>
                         </div>
                       </div>
-                    ) : displayedBreedValues.length > 0 ||
-                      generalCoverageLabels.length > 0 ||
-                      supportedAnimalLabels.length > 0 ? (
+                    ) : consolidatedBreedBadges.length > 0 ? (
                       <div className="space-y-4">
-                        {displayedBreedValues.length > 0 &&
-                          (Object.entries(groupedBreeds) as Array<[string, string[]]>).map(([animal, breeds]) => (
-                            <div key={animal}>
-                              <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
-                                {animal === 'other' ? 'Specialised coverage' : `${animal} specialisms`}
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {breeds.map((breed) => (
-                                  <span
-                                    key={breed}
-                                    className="rounded-full border border-[#E6C2B6] bg-[#F8E4DB] px-3 py-1.5 text-sm font-medium text-[#A55E48]"
-                                  >
-                                    {getBreedLabel(breed)}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
+                        <div className="flex flex-wrap gap-2">
+                          {consolidatedBreedBadges.map((label) => (
+                            <span
+                              key={label}
+                              className="rounded-full border border-[#DED4C6] bg-[#FFFDF8] px-3 py-1.5 text-sm font-medium text-[#5F5A52]"
+                            >
+                              {label}
+                            </span>
                           ))}
-
-                        {generalCoverageLabels.length > 0 && (
-                          <div>
-                            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
-                              {generalCoverageHeading}
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {generalCoverageLabels.map((label: string) => (
-                                <span
-                                  key={label}
-                                  className="rounded-full border border-[#E7DDD2] bg-[#FFFDF8] px-3 py-1.5 text-sm font-medium text-[#6E6A63]"
-                                >
-                                  Generally treats: {label}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {supportedAnimalLabels.length > 0 && (
-                          <div>
-                            <div className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-[#7E6B56]">
-                              Animals confirmed
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              {supportedAnimalLabels.map((label: string) => (
-                                <span
-                                  key={label}
-                                  className="rounded-full border border-[#3D5A45]/18 bg-[#3D5A45]/10 px-3 py-1.5 text-sm font-medium text-[#3D5A45]"
-                                >
-                                  {label}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
+                        </div>
                         {showNoSpecificBreedNote && (
                           <div className="rounded-[1.1rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] px-4 py-3">
                             <div className="text-sm font-medium text-[#585850]">
@@ -1208,7 +1198,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
                           G
                         </span>
-                        <span>{review.rating ? `${review.rating}` : 'N/A'}</span>
+                        {renderFilledStars(review.rating, {
+                          sizeClassName: 'h-3.5 w-3.5',
+                          filledClassName: 'fill-amber-400 text-amber-400',
+                          emptyClassName: 'text-[#D9C8A6]',
+                        })}
                         <span className="rounded-full bg-white/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7A5A19]">
                           review
                         </span>
@@ -1320,7 +1314,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
               <div className="grid gap-4 lg:grid-cols-2">
                 {pf_reviews.map((review) => {
                   const reviewerName = review.pf_profiles?.full_name || 'Anonymous User'
-                  const averageScore = getReviewAverage(review)
                   const handlingRating = review.handling_rating || 0
                   const environmentRating = review.environment_rating || 0
                   const temperamentTags = review.temperament_tags || []
@@ -1339,8 +1332,12 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                             </div>
                           </div>
                         </div>
-                        <div className="rounded-full bg-[#829e8d]/10 px-3 py-1 text-sm font-semibold text-[#6c8676] whitespace-nowrap">
-                          {averageScore}/5
+                        <div className="rounded-full bg-[#829e8d]/10 px-3 py-2 text-[#6c8676]">
+                          {renderFilledStars(getReviewAverage(review), {
+                            sizeClassName: 'h-3.5 w-3.5',
+                            filledClassName: 'fill-[#6c8676] text-[#6c8676]',
+                            emptyClassName: 'text-[#B8C8BF]',
+                          })}
                         </div>
                       </div>
 
@@ -1353,24 +1350,22 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                       <div className="mt-4 grid grid-cols-2 gap-3">
                         <div className="rounded-xl bg-stone-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Handling</div>
-                          <div className="mt-1 flex items-center gap-2">
-                            <span className="text-base font-bold text-stone-900">{handlingRating}/5</span>
-                            <div className="flex text-[#e07a5f]">
-                              {[...Array(5)].map((_, i) => (
-                                <Star key={i} className={`h-3.5 w-3.5 ${i < handlingRating ? 'fill-current' : 'text-stone-300'}`} />
-                              ))}
-                            </div>
+                          <div className="mt-2">
+                            {renderFilledStars(handlingRating, {
+                              sizeClassName: 'h-4 w-4',
+                              filledClassName: 'fill-[#E07A5F] text-[#E07A5F]',
+                              emptyClassName: 'text-stone-300',
+                            })}
                           </div>
                         </div>
                         <div className="rounded-xl bg-stone-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Environment</div>
-                          <div className="mt-1 flex items-center gap-2">
-                            <span className="text-base font-bold text-stone-900">{environmentRating}/5</span>
-                            <div className="flex text-[#e07a5f]">
-                              {[...Array(5)].map((_, i) => (
-                                <Star key={i} className={`h-3.5 w-3.5 ${i < environmentRating ? 'fill-current' : 'text-stone-300'}`} />
-                              ))}
-                            </div>
+                          <div className="mt-2">
+                            {renderFilledStars(environmentRating, {
+                              sizeClassName: 'h-4 w-4',
+                              filledClassName: 'fill-[#E07A5F] text-[#E07A5F]',
+                              emptyClassName: 'text-stone-300',
+                            })}
                           </div>
                         </div>
                       </div>
