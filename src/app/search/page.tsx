@@ -705,6 +705,7 @@ function SearchContent() {
 
                   {shouldRenderSearchFeedbackCard ? (
                     <InlineSearchFeedbackCard
+                      key={searchFeedbackSessionKey}
                       searchQuery={searchFeedbackQuery}
                       resultsCount={visibleProviders.length}
                       sessionKey={searchFeedbackSessionKey}

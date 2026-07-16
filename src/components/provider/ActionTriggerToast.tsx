@@ -47,22 +47,27 @@ export default function ActionTriggerToast({
     setSelectedRating(rating)
     setToastState('saving')
 
-    const { error } = await supabase.from('user_feedback').insert({
-      feedback_type: 'action_trigger',
-      rating,
-      metadata: {
-        provider_id: providerId,
-        action_type: actionType,
-      },
-    })
+    try {
+      const { error } = await supabase.from('user_feedback').insert({
+        feedback_type: 'action_trigger',
+        rating,
+        metadata: {
+          provider_id: providerId,
+          action_type: actionType,
+        },
+      })
 
-    if (error) {
+      if (error) {
+        console.error('Failed to save action trigger feedback', error)
+        onClose()
+        return
+      }
+
+      setToastState('success')
+    } catch (error) {
       console.error('Failed to save action trigger feedback', error)
       onClose()
-      return
     }
-
-    setToastState('success')
   }
 
   const successMessage = selectedRating ? SUCCESS_MESSAGE_BY_RATING[selectedRating] : ''

@@ -47,24 +47,30 @@ export default function InlineSearchFeedbackCard({
     setSelectedRating(rating)
     setCardState('saving')
 
-    const { error } = await supabase.from('user_feedback').insert({
-      feedback_type: 'search_relevance',
-      rating,
-      metadata: {
-        search_query: searchQuery,
-        results_count: resultsCount,
-      },
-    })
+    try {
+      const { error } = await supabase.from('user_feedback').insert({
+        feedback_type: 'search_relevance',
+        rating,
+        metadata: {
+          search_query: searchQuery,
+          results_count: resultsCount,
+        },
+      })
 
-    if (error) {
+      if (error) {
+        console.error('Failed to save inline search feedback', error)
+        setCardState('prompt')
+        setSelectedRating(null)
+        return
+      }
+
+      markSessionComplete()
+      setCardState('submitted')
+    } catch (error) {
       console.error('Failed to save inline search feedback', error)
       setCardState('prompt')
       setSelectedRating(null)
-      return
     }
-
-    markSessionComplete()
-    setCardState('submitted')
   }
 
   if (isHidden) return null
