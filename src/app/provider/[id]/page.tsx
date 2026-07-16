@@ -1,12 +1,15 @@
 'use client'
 
-import { useState, useEffect, use, useCallback, useMemo } from 'react'
+import { useState, useEffect, use, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { Star, MapPin, CheckCircle, Info, ShieldCheck, Copy, Check } from 'lucide-react'
 import Link from 'next/link'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
+import ActionTriggerToast, {
+  type ProviderContactActionType,
+} from '@/components/provider/ActionTriggerToast'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   type BreedAnalysisStatus,
@@ -130,6 +133,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const [showCallPopup, setShowCallPopup] = useState(false)
   const [showCopiedState, setShowCopiedState] = useState(false)
   const [reviewSubmitState, setReviewSubmitState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [shouldShowActionToast, setShouldShowActionToast] = useState(false)
+  const [activeContactAction, setActiveContactAction] = useState<ProviderContactActionType | null>(null)
+  const actionToastTimerRef = useRef<number | null>(null)
 
   // Review Form State
   const [showReviewForm, setShowReviewForm] = useState(false)
@@ -673,6 +679,43 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     }
   }
 
+  const actionToastSessionKey = `pawfinder:action-trigger-toast:${id}`
+
+  const closeActionToast = useCallback(() => {
+    if (actionToastTimerRef.current) {
+      window.clearTimeout(actionToastTimerRef.current)
+      actionToastTimerRef.current = null
+    }
+
+    setShouldShowActionToast(false)
+    setActiveContactAction(null)
+  }, [])
+
+  const handleContactAction = useCallback((actionType: ProviderContactActionType) => {
+    if (typeof window === 'undefined') return
+    if (window.sessionStorage.getItem(actionToastSessionKey)) return
+
+    window.sessionStorage.setItem(actionToastSessionKey, '1')
+    setActiveContactAction(actionType)
+
+    if (actionToastTimerRef.current) {
+      window.clearTimeout(actionToastTimerRef.current)
+    }
+
+    actionToastTimerRef.current = window.setTimeout(() => {
+      setShouldShowActionToast(true)
+      actionToastTimerRef.current = null
+    }, 3000)
+  }, [actionToastSessionKey])
+
+  useEffect(() => {
+    return () => {
+      if (actionToastTimerRef.current) {
+        window.clearTimeout(actionToastTimerRef.current)
+      }
+    }
+  }, [])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAF9F6] px-4 py-12 sm:px-6 sm:py-16">
@@ -1017,7 +1060,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
               <div className="pawfinder-fade-up-delay-3 mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
                 {callNumber && (
                   <button
-                    onClick={() => setShowCallPopup(true)}
+                    onClick={() => {
+                      setShowCallPopup(true)
+                      handleContactAction('phone_click')
+                    }}
                     className="pressable-soft rounded-full border border-[#3D5A45] bg-[#3D5A45] px-6 py-3 font-semibold text-white shadow-[0_14px_32px_-22px_rgba(61,90,69,0.85)] hover:bg-[#324A39]"
                   >
                     Call Business
@@ -1028,6 +1074,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     href={websiteUrl}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() => handleContactAction('website_click')}
                     className="pressable-soft rounded-full border border-[#D8C4A6] bg-[#FFF8ED] px-6 py-3 text-center font-semibold text-[#6A5121] shadow-[0_14px_32px_-24px_rgba(122,90,25,0.65)] hover:bg-[#FFF1D7]"
                   >
                     Visit Website
@@ -1038,6 +1085,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     href={bookingUrl}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() => handleContactAction('booking_click')}
                     className="pressable-soft rounded-full border border-[#C97C5D]/20 bg-[#C97C5D] px-6 py-3 text-center font-semibold text-white shadow-[0_14px_32px_-24px_rgba(145,84,60,0.7)] hover:bg-[#B96E52]"
                   >
                     Book Online
@@ -1349,6 +1397,15 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           </div>
         </div>
       )}
+
+      {shouldShowActionToast ? (
+        <ActionTriggerToast
+          providerId={provider.id}
+          actionType={activeContactAction}
+          visible={shouldShowActionToast}
+          onClose={closeActionToast}
+        />
+      ) : null}
     </div>
   )
 }

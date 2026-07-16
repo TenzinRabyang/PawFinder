@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
+import InlineSearchFeedbackCard from '@/components/search/InlineSearchFeedbackCard'
 import { removeCategoryDuplicateServices } from '@/lib/provider-name-service-inference'
 import { primeProviderSessionCache } from '@/lib/provider-session-cache'
 
@@ -305,6 +306,15 @@ function SearchContent() {
     () => sortedProviders.slice(0, visibleCount),
     [sortedProviders, visibleCount]
   )
+  const searchFeedbackQuery = filters.postcode || selectedLocationLabel || 'this area'
+  const searchFeedbackSessionKey = useMemo(
+    () => `pawfinder:inline-search-feedback:${searchParams.toString() || 'default'}`,
+    [searchParams]
+  )
+  const searchFeedbackInsertIndex = useMemo(
+    () => (visibleProviders.length > 0 ? Math.min(2, visibleProviders.length - 1) : -1),
+    [visibleProviders.length]
+  )
 
   const hasMoreResults = visibleCount < sortedProviders.length
 
@@ -527,6 +537,7 @@ function SearchContent() {
             {visibleProviders.map((provider, index) => {
               const isFeaturedResult = index === 0
               const currentFeaturedStatus = featuredLoadStatus[provider.id] || 'idle'
+              const shouldRenderSearchFeedbackCard = index === searchFeedbackInsertIndex
 
               const profileQuery = new URLSearchParams()
               if (isFeaturedResult) {
@@ -537,162 +548,172 @@ function SearchContent() {
               }
 
               return (
-              <Link
-                href={`/provider/${encodeURIComponent(provider.id)}${profileQuery.toString() ? `?${profileQuery.toString()}` : ''}`}
-                key={provider.id}
-                className="block group"
-              >
-                  <div className={`rounded-2xl border p-4 shadow-sm transition-all group-hover:border-stone-200 group-hover:shadow-md sm:p-5 ${isFeaturedResult ? 'bg-[#fffdf8] border-[#e7d7a6]' : 'bg-white border-stone-100'}`}>
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
-                    {/* Image Thumbnail */}
-                    <div className={`relative h-24 w-24 overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 sm:h-24 sm:w-24 sm:flex-shrink-0 ${!isFeaturedResult && provider.subscription_tier !== 'premium' ? 'blur-[2px]' : ''}`}>
-                      <ProviderImage
-                        photoReference={(isFeaturedResult || provider.subscription_tier === 'premium') ? provider.photo_reference : null}
-                        alt={provider.name}
-                        sizes="96px"
-                        priority={isFeaturedResult}
-                      />
-                    </div>
+                <div key={provider.id} className="space-y-4">
+                  <Link
+                    href={`/provider/${encodeURIComponent(provider.id)}${profileQuery.toString() ? `?${profileQuery.toString()}` : ''}`}
+                    className="block group"
+                  >
+                    <div className={`rounded-2xl border p-4 shadow-sm transition-all group-hover:border-stone-200 group-hover:shadow-md sm:p-5 ${isFeaturedResult ? 'bg-[#fffdf8] border-[#e7d7a6]' : 'bg-white border-stone-100'}`}>
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
+                        <div className={`relative h-24 w-24 overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 sm:h-24 sm:w-24 sm:flex-shrink-0 ${!isFeaturedResult && provider.subscription_tier !== 'premium' ? 'blur-[2px]' : ''}`}>
+                          <ProviderImage
+                            photoReference={(isFeaturedResult || provider.subscription_tier === 'premium') ? provider.photo_reference : null}
+                            alt={provider.name}
+                            sizes="96px"
+                            priority={isFeaturedResult}
+                          />
+                        </div>
 
-                    <div className="flex-1">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 flex-1">
-                        {isFeaturedResult && (
-                          <div className="mb-2 inline-flex items-center rounded-sm bg-[#f6edd1] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8a6d1f]">
-                            {getFeaturedLabel()}
+                        <div className="flex-1">
+                          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1">
+                              {isFeaturedResult && (
+                                <div className="mb-2 inline-flex items-center rounded-sm bg-[#f6edd1] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#8a6d1f]">
+                                  {getFeaturedLabel()}
+                                </div>
+                              )}
+                              <h3 className="flex items-start gap-2 text-xl font-medium text-stone-900 transition-colors group-hover:text-[#e07a5f]">
+                                {provider.name}
+                                {(provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium') && (
+                                  <CheckCircle className="mt-1 h-4 w-4 flex-shrink-0 text-green-500" />
+                                )}
+                              </h3>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-stone-500">
+                                <span className="font-medium uppercase tracking-[0.18em] text-[11px] text-stone-400">
+                                  {formatCategoryLabel(provider.category)}
+                                </span>
+                                <span className="hidden h-1 w-1 rounded-full bg-stone-300 sm:block" />
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-stone-400" />
+                                  <span className="truncate">{provider.address || provider.postcode}</span>
+                                </div>
+                                {typeof provider.distance_miles === 'number' && (
+                                  <>
+                                    <span className="hidden h-1 w-1 rounded-full bg-stone-300 sm:block" />
+                                    <span>{provider.distance_miles} miles</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                              {provider.google_rating ? (
+                                <div className="collar-tag collar-tag-small text-sm font-semibold">
+                                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
+                                    G
+                                  </span>
+                                  <span>{provider.google_rating.score}</span>
+                                  <span className="rounded-full bg-white/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7A5A19]">
+                                    {provider.google_rating.count}
+                                  </span>
+                                </div>
+                              ) : provider.native_rating ? (
+                                <div className="inline-flex items-center rounded-full border border-[#829e8d]/20 bg-[#829e8d]/8 px-3 py-1.5 text-sm font-semibold text-[#6c8676] shadow-sm">
+                                  <Star className="mr-1.5 h-3.5 w-3.5 fill-current" />
+                                  {provider.native_rating.score}
+                                  <span className="ml-1.5 text-xs font-medium text-[#6c8676]/80">({provider.native_rating.count})</span>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
-                        )}
-                        <h3 className="flex items-start gap-2 text-xl font-medium text-stone-900 transition-colors group-hover:text-[#e07a5f]">
-                          {provider.name}
-                          {(provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium') && (
-                            <CheckCircle className="mt-1 h-4 w-4 flex-shrink-0 text-green-500" />
+
+                          <div className="mt-4 flex flex-wrap gap-2">
+                            {getPrimaryTags(provider).map((tag: string) => (
+                              <span
+                                key={`tag-${provider.id}-${tag}`}
+                                className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-600"
+                              >
+                                {tag.startsWith('general_') ? formatGeneralCoverageLabel(tag) : tag}
+                              </span>
+                            ))}
+                            {getPrimaryTags(provider).length === 0 && (
+                              <span className="rounded-full bg-stone-50 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-400">
+                                More details on profile
+                              </span>
+                            )}
+                          </div>
+
+                          {provider.breed_match_type === 'general_inferred' && (
+                            <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-600">
+                              Breed match is based on general animal coverage inferred from the business website, not a confirmed breed specialism.
+                            </div>
                           )}
-                        </h3>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-stone-500">
-                          <span className="font-medium uppercase tracking-[0.18em] text-[11px] text-stone-400">
-                            {formatCategoryLabel(provider.category)}
-                          </span>
-                          <span className="hidden h-1 w-1 rounded-full bg-stone-300 sm:block" />
-                          <div className="flex min-w-0 items-center gap-1.5">
-                            <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-stone-400" />
-                            <span className="truncate">{provider.address || provider.postcode}</span>
-                          </div>
-                          {typeof provider.distance_miles === 'number' && (
-                            <>
-                              <span className="hidden h-1 w-1 rounded-full bg-stone-300 sm:block" />
-                              <span>{provider.distance_miles} miles</span>
-                            </>
+
+                          {isFeaturedResult && (
+                            <div className="mt-4 border-t border-stone-200 pt-4">
+                              {currentFeaturedStatus === 'loading' && (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="h-3 w-36 animate-pulse rounded-full bg-stone-200" />
+                                    <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-stone-100" />
+                                  </div>
+                                  <div className="h-4 w-24 animate-pulse rounded-full bg-stone-100" />
+                                </div>
+                              )}
+
+                              {currentFeaturedStatus === 'ready' && provider.ai_summary && (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
+                                      User Review Summary
+                                    </div>
+                                    <p className="mt-2 line-clamp-1 text-sm leading-6 text-stone-700">
+                                      {provider.ai_summary}
+                                    </p>
+                                  </div>
+                                  <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 transition-colors group-hover:text-[#829e8d]">
+                                    View Profile &rarr;
+                                  </span>
+                                </div>
+                              )}
+
+                              {currentFeaturedStatus === 'delayed' && (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="text-sm leading-6 text-stone-500">
+                                    We&apos;re still analysing this business. Check back shortly for the review summary.
+                                  </p>
+                                  <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
+                                    View Profile &rarr;
+                                  </span>
+                                </div>
+                              )}
+
+                              {currentFeaturedStatus === 'error' && (
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="text-sm leading-6 text-stone-500">
+                                    The review summary is temporarily unavailable. Open the profile for the full view.
+                                  </p>
+                                  <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
+                                    View Profile &rarr;
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {!isFeaturedResult && (
+                            <div className="mt-4 flex items-center justify-end border-t border-stone-100 pt-4">
+                              <span className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 transition-colors group-hover:text-[#829e8d]">
+                                View Profile &rarr;
+                              </span>
+                            </div>
                           )}
                         </div>
                       </div>
-                      
-                      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                        {provider.google_rating ? (
-                          <div className="collar-tag collar-tag-small text-sm font-semibold">
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
-                              G
-                            </span>
-                            <span>{provider.google_rating.score}</span>
-                            <span className="rounded-full bg-white/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7A5A19]">
-                              {provider.google_rating.count}
-                            </span>
-                          </div>
-                        ) : provider.native_rating ? (
-                          <div className="inline-flex items-center rounded-full border border-[#829e8d]/20 bg-[#829e8d]/8 px-3 py-1.5 text-sm font-semibold text-[#6c8676] shadow-sm">
-                            <Star className="mr-1.5 h-3.5 w-3.5 fill-current" />
-                            {provider.native_rating.score}
-                            <span className="ml-1.5 text-xs font-medium text-[#6c8676]/80">({provider.native_rating.count})</span>
-                          </div>
-                        ) : null}
-                      </div>
                     </div>
+                  </Link>
 
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {getPrimaryTags(provider).map((tag: string) => (
-                        <span
-                          key={`tag-${provider.id}-${tag}`}
-                          className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-600"
-                        >
-                          {tag.startsWith('general_') ? formatGeneralCoverageLabel(tag) : tag}
-                        </span>
-                      ))}
-                      {getPrimaryTags(provider).length === 0 && (
-                          <span className="rounded-full bg-stone-50 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-400">
-                            More details on profile
-                          </span>
-                        )}
-                    </div>
-
-                    {provider.breed_match_type === 'general_inferred' && (
-                      <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-medium text-stone-600">
-                        Breed match is based on general animal coverage inferred from the business website, not a confirmed breed specialism.
-                      </div>
-                    )}
-
-                    {isFeaturedResult && (
-                      <div className="mt-4 border-t border-stone-200 pt-4">
-                        {currentFeaturedStatus === 'loading' && (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0 flex-1">
-                              <div className="h-3 w-36 animate-pulse rounded-full bg-stone-200" />
-                              <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-stone-100" />
-                            </div>
-                            <div className="h-4 w-24 animate-pulse rounded-full bg-stone-100" />
-                          </div>
-                        )}
-
-                        {currentFeaturedStatus === 'ready' && provider.ai_summary && (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-                            <div className="min-w-0 flex-1">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-stone-500">
-                                User Review Summary
-                              </div>
-                              <p className="mt-2 line-clamp-1 text-sm leading-6 text-stone-700">
-                                {provider.ai_summary}
-                              </p>
-                            </div>
-                            <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 transition-colors group-hover:text-[#829e8d]">
-                              View Profile &rarr;
-                            </span>
-                          </div>
-                        )}
-
-                        {currentFeaturedStatus === 'delayed' && (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm leading-6 text-stone-500">
-                              We&apos;re still analysing this business. Check back shortly for the review summary.
-                            </p>
-                            <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
-                              View Profile &rarr;
-                            </span>
-                          </div>
-                        )}
-
-                        {currentFeaturedStatus === 'error' && (
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm leading-6 text-stone-500">
-                              The review summary is temporarily unavailable. Open the profile for the full view.
-                            </p>
-                            <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-[0.2em] text-stone-500">
-                              View Profile &rarr;
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {!isFeaturedResult && (
-                      <div className="mt-4 flex items-center justify-end border-t border-stone-100 pt-4">
-                        <span className="text-xs font-semibold uppercase tracking-[0.2em] text-stone-500 transition-colors group-hover:text-[#829e8d]">
-                          View Profile &rarr;
-                        </span>
-                      </div>
-                    )}
-                    </div>
-                    </div>
-                  </div>
-                </Link>
-            )})}
+                  {shouldRenderSearchFeedbackCard ? (
+                    <InlineSearchFeedbackCard
+                      key={searchFeedbackSessionKey}
+                      searchQuery={searchFeedbackQuery}
+                      resultsCount={visibleProviders.length}
+                      sessionKey={searchFeedbackSessionKey}
+                    />
+                  ) : null}
+                </div>
+              )
+            })}
 
             {hasMoreResults && (
               <div className="flex justify-center pt-2">
