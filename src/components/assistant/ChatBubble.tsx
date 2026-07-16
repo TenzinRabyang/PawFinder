@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import LocationSearchControl, {
   type LocationSearchContext,
 } from "@/components/location/LocationSearchControl";
+import { createClient } from "@/utils/supabase/client";
 
 type ChatMessage = {
   id: string;
@@ -34,6 +35,13 @@ type StoredChatSession = {
 };
 
 const INITIAL_MESSAGES: ChatMessage[] = [];
+type FeedbackReason = "wrong_info" | "confusing" | "broken_link";
+
+type MessageFeedbackState = {
+  status: "idle" | "choosing_reason" | "submitting" | "submitted";
+  selectedReason?: FeedbackReason;
+  error?: string;
+};
 
 const ASSISTANT_LOCATION_SESSION_KEY = "pawfinder:assistant-location-context";
 const CHAT_SESSION_STORAGE_KEY = "pawfinder_chat_session";
@@ -47,6 +55,13 @@ const QUICK_STARTER_CHIPS = [
   "Vets in Sheffield",
   "Cattery nearby",
   "Dog walkers",
+];
+const FEEDBACK_THANK_YOU_MESSAGE = "Thank you for your feedback! ❤️";
+const FEEDBACK_ERROR_MESSAGE = "Couldn’t save feedback. Please try again.";
+const FEEDBACK_REASONS: Array<{ label: string; value: FeedbackReason }> = [
+  { label: "Wrong Info", value: "wrong_info" },
+  { label: "Confusing", value: "confusing" },
+  { label: "Broken Link", value: "broken_link" },
 ];
 
 type MessageSegment =
@@ -145,6 +160,10 @@ function getInitialMessages() {
   }
 }
 
+function getFeedbackPreview(content: string) {
+  return content.replace(/\s+/g, " ").trim().slice(0, 100);
+}
+
 function isValidLocationContext(value: unknown): value is LocationSearchContext {
   if (!value || typeof value !== "object") return false;
 
@@ -198,9 +217,13 @@ function getLocationContextFromSearchParams(
 
 export default function ChatBubble() {
   const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
   const [isOpen, setIsOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>(getInitialMessages);
+  const [feedbackByMessageId, setFeedbackByMessageId] = useState<Record<string, MessageFeedbackState>>(
+    {}
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isCollectingLocation, setIsCollectingLocation] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -472,10 +495,184 @@ export default function ChatBubble() {
 
   const handleResetConversation = () => {
     setMessages(INITIAL_MESSAGES);
+    setFeedbackByMessageId({});
     setDraft("");
     setIsCollectingLocation(false);
     setShowResetConfirm(false);
     window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+  };
+
+  const setFeedbackState = (messageId: string, nextState: MessageFeedbackState) => {
+    setFeedbackByMessageId((currentState) => ({
+      ...currentState,
+      [messageId]: nextState,
+    }));
+  };
+
+  const submitFeedback = async (
+    message: ChatMessage,
+    rating: "thumb_up" | "thumb_down",
+    reason?: FeedbackReason
+  ) => {
+    const nextSubmittingState: MessageFeedbackState = {
+      status: "submitting",
+      ...(reason ? { selectedReason: reason } : {}),
+    };
+
+    setFeedbackState(message.id, nextSubmittingState);
+
+    const insertPayload: {
+      feedback_type: string;
+      rating: "thumb_up" | "thumb_down";
+      reason?: FeedbackReason;
+      metadata?: {
+        message_id: string;
+        preview_text: string;
+      };
+    } = {
+      feedback_type: "ai_chat",
+      rating,
+    };
+
+    if (reason) {
+      insertPayload.reason = reason;
+      insertPayload.metadata = {
+        message_id: message.id,
+        preview_text: getFeedbackPreview(message.content),
+      };
+    }
+
+    try {
+      const { error } = await supabase.from("user_feedback").insert(insertPayload);
+
+      if (error) {
+        console.error("Failed to save assistant feedback", error);
+        setFeedbackState(message.id, {
+          status: reason ? "choosing_reason" : "idle",
+          ...(reason ? { selectedReason: reason } : {}),
+          error: FEEDBACK_ERROR_MESSAGE,
+        });
+        return;
+      }
+
+      setFeedbackState(message.id, {
+        status: "submitted",
+        ...(reason ? { selectedReason: reason } : {}),
+      });
+    } catch (error) {
+      console.error("Failed to save assistant feedback", error);
+      setFeedbackState(message.id, {
+        status: reason ? "choosing_reason" : "idle",
+        ...(reason ? { selectedReason: reason } : {}),
+        error: FEEDBACK_ERROR_MESSAGE,
+      });
+    }
+  };
+
+  const handleThumbUp = async (message: ChatMessage) => {
+    const currentState = feedbackByMessageId[message.id];
+
+    if (currentState?.status === "submitted" || currentState?.status === "submitting") {
+      return;
+    }
+
+    await submitFeedback(message, "thumb_up");
+  };
+
+  const handleThumbDown = (messageId: string) => {
+    const currentState = feedbackByMessageId[messageId];
+
+    if (currentState?.status === "submitted" || currentState?.status === "submitting") {
+      return;
+    }
+
+    setFeedbackState(messageId, {
+      status: "choosing_reason",
+    });
+  };
+
+  const handleFeedbackReason = async (message: ChatMessage, reason: FeedbackReason) => {
+    const currentState = feedbackByMessageId[message.id];
+
+    if (currentState?.status === "submitted" || currentState?.status === "submitting") {
+      return;
+    }
+
+    await submitFeedback(message, "thumb_down", reason);
+  };
+
+  const renderFeedbackUI = (message: ChatMessage) => {
+    const feedbackState = feedbackByMessageId[message.id] ?? { status: "idle" as const };
+    const isSubmitting = feedbackState.status === "submitting";
+    const showReasonChips =
+      feedbackState.status === "choosing_reason" ||
+      (feedbackState.status === "submitting" && Boolean(feedbackState.selectedReason));
+
+    if (feedbackState.status === "submitted") {
+      return (
+        <p className="mt-3 text-xs font-medium text-[#6C7468]">
+          {FEEDBACK_THANK_YOU_MESSAGE}
+        </p>
+      );
+    }
+
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center gap-2.5 text-lg leading-none text-[#9AA095]">
+          <button
+            type="button"
+            onClick={() => void handleThumbUp(message)}
+            disabled={isSubmitting}
+            aria-label="Mark assistant response as helpful"
+            className="transition hover:scale-105 hover:text-[#5B6258] disabled:cursor-wait disabled:opacity-50"
+          >
+            👍
+          </button>
+          <button
+            type="button"
+            onClick={() => handleThumbDown(message.id)}
+            disabled={isSubmitting}
+            aria-label="Mark assistant response as unhelpful"
+            className="transition hover:scale-105 hover:text-[#5B6258] disabled:cursor-wait disabled:opacity-50"
+          >
+            👎
+          </button>
+          {isSubmitting ? (
+            <span className="text-[0.68rem] font-medium uppercase tracking-[0.16em] text-[#9AA095]">
+              Saving
+            </span>
+          ) : null}
+        </div>
+
+        {showReasonChips ? (
+          <div className="flex flex-wrap gap-2">
+            {FEEDBACK_REASONS.map((option) => {
+              const isSelected = feedbackState.selectedReason === option.value;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => void handleFeedbackReason(message, option.value)}
+                  disabled={isSubmitting}
+                  className={`rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] transition ${
+                    isSelected
+                      ? "border-[#B14A2B] bg-[#F7E5DD] text-[#8C5B4D]"
+                      : "border-[#D9D2C4] bg-white/85 text-[#6C7468] hover:border-[#BCA88B] hover:text-[#394136]"
+                  } disabled:cursor-wait disabled:opacity-50`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {feedbackState.error ? (
+          <p className="text-xs font-medium text-[#A15237]">{feedbackState.error}</p>
+        ) : null}
+      </div>
+    );
   };
 
   const renderMessageBody = (message: ChatMessage) => {
@@ -652,6 +849,7 @@ export default function ChatBubble() {
                             {isAssistant ? "Assistant" : "You"}
                           </p>
                           {renderMessageBody(message)}
+                          {isAssistant ? renderFeedbackUI(message) : null}
                         </div>
                       </div>
                     );
