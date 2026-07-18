@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { X } from 'lucide-react'
 
 export type ProviderContactActionType = 'phone_click' | 'website_click' | 'booking_click'
 
@@ -33,6 +34,7 @@ export default function ActionTriggerToast({
   const [feedbackId, setFeedbackId] = useState<string | null>(null)
   const [comment, setComment] = useState('')
   const [email, setEmail] = useState('')
+  const [isDismissed, setIsDismissed] = useState(false)
 
   useEffect(() => {
     if (toastState !== 'final') return
@@ -119,16 +121,25 @@ export default function ActionTriggerToast({
   const isSaving = toastState === 'saving'
   const isSavingDetails = toastState === 'saving_details'
   const canSubmitDetails = Boolean(comment.trim() || email.trim())
+  const shouldRenderToast = visible && !isDismissed
 
   return (
     <div
-      className={`pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:inset-x-auto sm:bottom-4 sm:left-4 sm:justify-start sm:px-0 ${
-        visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-8 scale-95 opacity-0'
+      className={`pointer-events-none fixed bottom-4 left-4 right-20 z-50 flex justify-start transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:right-auto md:max-w-md ${
+        shouldRenderToast ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-8 scale-95 opacity-0'
       }`}
       aria-live="polite"
     >
-      <div className="pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-[1.35rem] border border-[#E4DBCA] bg-[rgba(255,252,247,0.97)] p-4 text-[#2F312E] shadow-[0_22px_44px_-26px_rgba(32,38,31,0.42)] backdrop-blur">
+      <div className="pointer-events-auto relative w-full overflow-hidden rounded-[1.35rem] border border-[#E4DBCA] bg-[rgba(255,252,247,0.97)] p-4 pr-11 text-[#2F312E] shadow-[0_22px_44px_-26px_rgba(32,38,31,0.42)] backdrop-blur">
         <div className="absolute inset-x-0 top-0 h-1 bg-[#B14A2B]" />
+        <button
+          type="button"
+          onClick={() => setIsDismissed(true)}
+          className="absolute right-2 top-2 text-gray-400 transition hover:text-gray-600"
+          aria-label="Close feedback toast"
+        >
+          <X className="h-4 w-4" />
+        </button>
         {toastState === 'prompt' || toastState === 'saving' ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
