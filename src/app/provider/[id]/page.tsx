@@ -1,9 +1,10 @@
 'use client'
 
+import Image from 'next/image'
 import { useState, useEffect, use, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check } from 'lucide-react'
+import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check, Info } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
@@ -152,6 +153,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const [reviewSubmitState, setReviewSubmitState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [shouldShowActionToast, setShouldShowActionToast] = useState(false)
   const [activeContactAction, setActiveContactAction] = useState<ProviderContactActionType | null>(null)
+  const [showGalleryInfo, setShowGalleryInfo] = useState(false)
   const actionToastTimerRef = useRef<number | null>(null)
 
   // Review Form State
@@ -792,8 +794,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   }
   if (!provider) return <div className="min-h-screen bg-[#FAF9F6] p-8 text-center">Provider not found</div>
 
-  const isPremium = provider.subscription_tier !== 'free'
-  const canShowLivePreview = isPremium || isFeaturedProfile
   const isVerifiedBusiness =
     provider.is_verified || provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium'
   const visibleAiSummary = provider.review_summary || liveDetails?.ai_summary || null
@@ -1128,8 +1128,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
               </div>
             </div>
 
-            {canShowLivePreview ? (
-              <div className="pawfinder-fade-up-delay-2 w-full rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
+            <div className="pawfinder-fade-up-delay-2 w-full rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
                 <h3 className="font-display mb-4 flex items-center gap-2 text-lg font-bold text-[#344136]">
                   <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black text-[#7A5A19] shadow-sm">
                     G
@@ -1149,18 +1148,48 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 </div>
 
                 <div className="mt-6">
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
-                    Gallery
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
+                      Gallery
+                    </div>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowGalleryInfo((current) => !current)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#DDD1C4] bg-white/80 text-[#6E6A63] shadow-sm transition-colors hover:bg-white"
+                        aria-label="Why are gallery images unavailable?"
+                        aria-expanded={showGalleryInfo}
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
+                      {showGalleryInfo ? (
+                        <div className="absolute right-0 top-9 z-20 w-44 rounded-2xl border border-[#E5DBCF] bg-white px-3 py-2 text-xs font-medium leading-5 text-[#5D5A54] shadow-[0_18px_36px_-28px_rgba(60,48,35,0.45)]">
+                          Images not available during beta testing. 🐾
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {lockedGallerySlots.map((slot) => (
                       <div
                         key={slot}
-                        className="relative flex h-24 items-center justify-center overflow-hidden rounded-lg border border-[#E5DBCF] bg-[linear-gradient(180deg,rgba(248,238,225,0.96)_0%,rgba(243,232,216,0.96)_100%)] sm:h-28 md:h-24"
+                        className="relative aspect-[4/3] min-h-[6.25rem] overflow-hidden rounded-[1rem] border border-[#E5DBCF] bg-[linear-gradient(180deg,rgba(248,238,225,0.96)_0%,rgba(243,232,216,0.96)_100%)]"
                       >
-                        <div className="absolute inset-3 rounded-lg bg-white/50 blur-md" />
-                        <div className="relative px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7C7468]">
-                          🔒 Gallery available for premium members
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.7),transparent_52%),linear-gradient(180deg,rgba(255,255,255,0.34)_0%,rgba(255,255,255,0.08)_100%)]" />
+                        <div className="absolute inset-[12%] overflow-hidden rounded-[0.9rem] border border-white/35 bg-white/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
+                          <div className="absolute inset-0 scale-110 opacity-70 blur-md">
+                            <Image
+                              src="/pet-placeholder.svg"
+                              alt=""
+                              fill
+                              sizes="160px"
+                              className="object-cover"
+                            />
+                          </div>
+                          <div className="absolute inset-0 bg-white/20" />
+                        </div>
+                        <div className="absolute inset-x-3 bottom-3 rounded-full border border-white/45 bg-white/70 px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7C7468] backdrop-blur-sm">
+                          Beta gallery preview
                         </div>
                       </div>
                     ))}
@@ -1175,8 +1204,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     PawFinder keeps live Google trust signals and saved breed and service analysis visually separate so pet owners can scan what is confirmed at a glance.
                   </p>
                 </div>
-              </div>
-            ) : null}
+            </div>
           </div>
 
           {isFeaturedProfile && liveReviews.length > 0 && (
