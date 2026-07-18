@@ -837,6 +837,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     ? `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(provider.google_place_id)}&query=${directionsQuery}`
     : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
   const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
+  const showTemperamentReviews = false
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
@@ -1247,181 +1248,182 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             </div>
           )}
 
-          {/* Native Reviews Section */}
-        <div className="mt-12">
-          <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-3xl font-bold text-stone-900 flex items-center gap-3">
-                Temperament Reviews
-                <span className="bg-[#829e8d] text-white text-xs px-2 py-1 rounded-full uppercase tracking-wider font-bold">Native</span>
-              </h2>
-              <p className="text-stone-500 mt-1">Verified handling and environment ratings from real pet owners.</p>
-              {pf_reviews.length > 0 && <p className="mt-2 text-sm text-stone-400">{pf_reviews.length} review{pf_reviews.length === 1 ? '' : 's'}</p>}
-            </div>
-            <button 
-              onClick={() => setShowReviewForm(!showReviewForm)}
-              className="w-full rounded-full border border-stone-300 bg-white px-6 py-2.5 font-semibold text-stone-700 transition-colors hover:bg-stone-50 sm:w-auto"
-            >
-              Leave a Review
-            </button>
-          </div>
-
-          {showReviewForm && (
-            <div className="mb-8 rounded-2xl border border-[#829e8d] bg-white p-5 shadow-sm sm:p-8">
-              <h3 className="text-xl font-bold mb-6">Write a Temperament Review</h3>
-              <form onSubmit={submitReview} className="space-y-6">
+          {showTemperamentReviews ? (
+            <div className="mt-12">
+              <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <label className="block text-sm font-medium text-stone-700 mb-2">Pet Breed (e.g. Rescue Greyhound)</label>
-                  <input required type="text" value={reviewForm.dog_breed} onChange={e => setReviewForm({...reviewForm, dog_breed: e.target.value})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
+                  <h2 className="flex items-center gap-3 text-3xl font-bold text-stone-900">
+                    Temperament Reviews
+                    <span className="rounded-full bg-[#829e8d] px-2 py-1 text-xs font-bold uppercase tracking-wider text-white">Native</span>
+                  </h2>
+                  <p className="mt-1 text-stone-500">Verified handling and environment ratings from real pet owners.</p>
+                  {pf_reviews.length > 0 && <p className="mt-2 text-sm text-stone-400">{pf_reviews.length} review{pf_reviews.length === 1 ? '' : 's'}</p>}
                 </div>
-                
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-stone-700 mb-2">Handling Rating (1-5)</label>
-                    <input type="number" min="1" max="5" value={reviewForm.handling_rating} onChange={e => setReviewForm({...reviewForm, handling_rating: parseInt(e.target.value)})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
-                    <p className="text-xs text-stone-500 mt-1">How well did they handle your pet&apos;s specific needs?</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-stone-700 mb-2">Environment Rating (1-5)</label>
-                    <input type="number" min="1" max="5" value={reviewForm.environment_rating} onChange={e => setReviewForm({...reviewForm, environment_rating: parseInt(e.target.value)})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
-                    <p className="text-xs text-stone-500 mt-1">Was the environment calm, chaotic, secure?</p>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-stone-700 mb-2">Temperament Tags</label>
-                  <div className="flex flex-wrap gap-2">
-                    {availableTags.map(tag => (
-                      <button 
-                        key={tag} 
-                        type="button"
-                        onClick={() => toggleTag(tag)}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${reviewForm.temperament_tags.includes(tag) ? 'bg-[#829e8d] text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-stone-700 mb-2">Comment</label>
-                  <textarea required rows={4} value={reviewForm.comment} onChange={e => setReviewForm({...reviewForm, comment: e.target.value})} className="w-full rounded-md border border-stone-300 px-3 py-2"></textarea>
-                </div>
-
-                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-4">
-                  <button type="button" onClick={() => setShowReviewForm(false)} className="rounded-full px-6 py-2.5 font-medium text-stone-600 hover:bg-stone-100">Cancel</button>
-                  <button type="submit" className="rounded-full bg-[#829e8d] px-6 py-2.5 font-semibold text-white hover:bg-[#6c8676]">Submit Review</button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {reviewSubmitState === 'saving' && (
-            <div className="mb-6 rounded-2xl border border-[#829e8d]/20 bg-[#829e8d]/10 px-4 py-3 text-sm font-medium text-[#6c8676]">
-              Saving your review and refreshing the AI summary...
-            </div>
-          )}
-
-          {reviewSubmitState === 'saved' && (
-            <div className="mb-6 rounded-2xl border border-[#829e8d]/20 bg-[#829e8d]/10 px-4 py-3 text-sm font-medium text-[#6c8676]">
-              Review saved. The AI summary refresh runs in the background and may take a short while to appear.
-            </div>
-          )}
-
-          <div>
-            {pf_reviews.length === 0 ? (
-              <div className="rounded-2xl border border-stone-100 bg-stone-50 p-8 text-center sm:p-12">
-                <Star className="w-12 h-12 text-stone-300 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-stone-800 mb-2">No temperament reviews yet</h3>
-                <p className="text-stone-500 mb-6">Be the first to leave a breed-specific review for this business!</p>
-                <button 
-                  onClick={() => setShowReviewForm(true)}
-                  className="bg-[#829e8d] text-white px-6 py-2 rounded-full font-semibold hover:bg-[#6c8676] transition-colors"
+                <button
+                  onClick={() => setShowReviewForm(!showReviewForm)}
+                  className="w-full rounded-full border border-stone-300 bg-white px-6 py-2.5 font-semibold text-stone-700 transition-colors hover:bg-stone-50 sm:w-auto"
                 >
-                  Write the first review
+                  Leave a Review
                 </button>
               </div>
-            ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {pf_reviews.map((review) => {
-                  const reviewerName = review.pf_profiles?.full_name || 'Anonymous User'
-                  const handlingRating = review.handling_rating || 0
-                  const environmentRating = review.environment_rating || 0
-                  const temperamentTags = review.temperament_tags || []
 
-                  return (
-                    <article key={review.id} className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm sm:p-5">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#829e8d]/10 text-sm font-bold text-[#6c8676]">
-                            {getReviewerInitials(reviewerName)}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="truncate font-bold text-stone-900">{reviewerName}</div>
-                            <div className="mt-1 text-sm text-stone-500">
-                              Pet breed: <span className="font-medium text-stone-700">{review.dog_breed}</span>
+              {showReviewForm && (
+                <div className="mb-8 rounded-2xl border border-[#829e8d] bg-white p-5 shadow-sm sm:p-8">
+                  <h3 className="mb-6 text-xl font-bold">Write a Temperament Review</h3>
+                  <form onSubmit={submitReview} className="space-y-6">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-stone-700">Pet Breed (e.g. Rescue Greyhound)</label>
+                      <input required type="text" value={reviewForm.dog_breed} onChange={e => setReviewForm({...reviewForm, dog_breed: e.target.value})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-stone-700">Handling Rating (1-5)</label>
+                        <input type="number" min="1" max="5" value={reviewForm.handling_rating} onChange={e => setReviewForm({...reviewForm, handling_rating: parseInt(e.target.value)})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
+                        <p className="mt-1 text-xs text-stone-500">How well did they handle your pet&apos;s specific needs?</p>
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-stone-700">Environment Rating (1-5)</label>
+                        <input type="number" min="1" max="5" value={reviewForm.environment_rating} onChange={e => setReviewForm({...reviewForm, environment_rating: parseInt(e.target.value)})} className="w-full rounded-md border border-stone-300 px-3 py-2" />
+                        <p className="mt-1 text-xs text-stone-500">Was the environment calm, chaotic, secure?</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-stone-700">Temperament Tags</label>
+                      <div className="flex flex-wrap gap-2">
+                        {availableTags.map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => toggleTag(tag)}
+                            className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${reviewForm.temperament_tags.includes(tag) ? 'bg-[#829e8d] text-white' : 'bg-stone-100 text-stone-600 hover:bg-stone-200'}`}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-stone-700">Comment</label>
+                      <textarea required rows={4} value={reviewForm.comment} onChange={e => setReviewForm({...reviewForm, comment: e.target.value})} className="w-full rounded-md border border-stone-300 px-3 py-2"></textarea>
+                    </div>
+
+                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end sm:gap-4">
+                      <button type="button" onClick={() => setShowReviewForm(false)} className="rounded-full px-6 py-2.5 font-medium text-stone-600 hover:bg-stone-100">Cancel</button>
+                      <button type="submit" className="rounded-full bg-[#829e8d] px-6 py-2.5 font-semibold text-white hover:bg-[#6c8676]">Submit Review</button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {reviewSubmitState === 'saving' && (
+                <div className="mb-6 rounded-2xl border border-[#829e8d]/20 bg-[#829e8d]/10 px-4 py-3 text-sm font-medium text-[#6c8676]">
+                  Saving your review and refreshing the AI summary...
+                </div>
+              )}
+
+              {reviewSubmitState === 'saved' && (
+                <div className="mb-6 rounded-2xl border border-[#829e8d]/20 bg-[#829e8d]/10 px-4 py-3 text-sm font-medium text-[#6c8676]">
+                  Review saved. The AI summary refresh runs in the background and may take a short while to appear.
+                </div>
+              )}
+
+              <div>
+                {pf_reviews.length === 0 ? (
+                  <div className="rounded-2xl border border-stone-100 bg-stone-50 p-8 text-center sm:p-12">
+                    <Star className="mx-auto mb-4 h-12 w-12 text-stone-300" />
+                    <h3 className="mb-2 text-xl font-bold text-stone-800">No temperament reviews yet</h3>
+                    <p className="mb-6 text-stone-500">Be the first to leave a breed-specific review for this business!</p>
+                    <button
+                      onClick={() => setShowReviewForm(true)}
+                      className="rounded-full bg-[#829e8d] px-6 py-2 font-semibold text-white transition-colors hover:bg-[#6c8676]"
+                    >
+                      Write the first review
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {pf_reviews.map((review) => {
+                      const reviewerName = review.pf_profiles?.full_name || 'Anonymous User'
+                      const handlingRating = review.handling_rating || 0
+                      const environmentRating = review.environment_rating || 0
+                      const temperamentTags = review.temperament_tags || []
+
+                      return (
+                        <article key={review.id} className="rounded-2xl border border-stone-100 bg-white p-4 shadow-sm sm:p-5">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#829e8d]/10 text-sm font-bold text-[#6c8676]">
+                                {getReviewerInitials(reviewerName)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="truncate font-bold text-stone-900">{reviewerName}</div>
+                                <div className="mt-1 text-sm text-stone-500">
+                                  Pet breed: <span className="font-medium text-stone-700">{review.dog_breed}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-full bg-[#829e8d]/10 px-3 py-2 text-[#6c8676]">
+                              {renderFilledStars(getReviewAverage(review), {
+                                sizeClassName: 'h-3.5 w-3.5',
+                                filledClassName: 'fill-[#6c8676] text-[#6c8676]',
+                                emptyClassName: 'text-[#B8C8BF]',
+                              })}
                             </div>
                           </div>
-                        </div>
-                        <div className="rounded-full bg-[#829e8d]/10 px-3 py-2 text-[#6c8676]">
-                          {renderFilledStars(getReviewAverage(review), {
-                            sizeClassName: 'h-3.5 w-3.5',
-                            filledClassName: 'fill-[#6c8676] text-[#6c8676]',
-                            emptyClassName: 'text-[#B8C8BF]',
-                          })}
-                        </div>
-                      </div>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-stone-400">
-                        <span>{new Date(review.created_at).toLocaleDateString()}</span>
-                        <span className="hidden h-1 w-1 rounded-full bg-stone-300 sm:block" />
-                        <span>{review.temperament_tags?.length || 0} temperament tags</span>
-                      </div>
-
-                      <div className="mt-4 grid grid-cols-2 gap-3">
-                        <div className="rounded-xl bg-stone-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Handling</div>
-                          <div className="mt-2">
-                            {renderFilledStars(handlingRating, {
-                              sizeClassName: 'h-4 w-4',
-                              filledClassName: 'fill-[#E07A5F] text-[#E07A5F]',
-                              emptyClassName: 'text-stone-300',
-                            })}
+                          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-stone-400">
+                            <span>{new Date(review.created_at).toLocaleDateString()}</span>
+                            <span className="hidden h-1 w-1 rounded-full bg-stone-300 sm:block" />
+                            <span>{review.temperament_tags?.length || 0} temperament tags</span>
                           </div>
-                        </div>
-                        <div className="rounded-xl bg-stone-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Environment</div>
-                          <div className="mt-2">
-                            {renderFilledStars(environmentRating, {
-                              sizeClassName: 'h-4 w-4',
-                              filledClassName: 'fill-[#E07A5F] text-[#E07A5F]',
-                              emptyClassName: 'text-stone-300',
-                            })}
+
+                          <div className="mt-4 grid grid-cols-2 gap-3">
+                            <div className="rounded-xl bg-stone-50 p-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Handling</div>
+                              <div className="mt-2">
+                                {renderFilledStars(handlingRating, {
+                                  sizeClassName: 'h-4 w-4',
+                                  filledClassName: 'fill-[#E07A5F] text-[#E07A5F]',
+                                  emptyClassName: 'text-stone-300',
+                                })}
+                              </div>
+                            </div>
+                            <div className="rounded-xl bg-stone-50 p-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Environment</div>
+                              <div className="mt-2">
+                                {renderFilledStars(environmentRating, {
+                                  sizeClassName: 'h-4 w-4',
+                                  filledClassName: 'fill-[#E07A5F] text-[#E07A5F]',
+                                  emptyClassName: 'text-stone-300',
+                                })}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
 
-                      <div className="mt-4 rounded-xl border border-stone-100 bg-stone-50/70 p-4">
-                        <p className="text-sm leading-6 text-stone-700">{review.comment}</p>
-                      </div>
+                          <div className="mt-4 rounded-xl border border-stone-100 bg-stone-50/70 p-4">
+                            <p className="text-sm leading-6 text-stone-700">{review.comment}</p>
+                          </div>
 
-                      {temperamentTags.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {temperamentTags.map((tag: string) => (
-                            <span key={tag} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-600">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </article>
-                  )
-                })}
+                          {temperamentTags.length > 0 && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {temperamentTags.map((tag: string) => (
+                                <span key={tag} className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-stone-600">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          ) : null}
       </div>
       </div>
 
