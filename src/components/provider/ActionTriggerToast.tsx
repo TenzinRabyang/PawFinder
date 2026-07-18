@@ -122,17 +122,21 @@ export default function ActionTriggerToast({
 
   return (
     <div
-      className={`pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 transition-all duration-300 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:px-0 ${
-        visible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
+      className={`pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 transition-[opacity,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:inset-x-auto sm:bottom-4 sm:left-4 sm:justify-start sm:px-0 ${
+        visible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-8 scale-95 opacity-0'
       }`}
       aria-live="polite"
     >
-      <div className="pointer-events-auto w-full max-w-sm rounded-[1.35rem] border border-[#E4DBCA] bg-[rgba(255,252,247,0.97)] p-4 text-[#2F312E] shadow-[0_22px_44px_-26px_rgba(32,38,31,0.42)] backdrop-blur">
+      <div className="pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-[1.35rem] border border-[#E4DBCA] bg-[rgba(255,252,247,0.97)] p-4 text-[#2F312E] shadow-[0_22px_44px_-26px_rgba(32,38,31,0.42)] backdrop-blur">
+        <div className="absolute inset-x-0 top-0 h-1 bg-[#B14A2B]" />
         {toastState === 'prompt' || toastState === 'saving' ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium leading-6 text-[#394136]">
-              Did you get in touch with this provider?
-            </p>
+            <div className="flex items-start gap-3">
+              <span className="mt-1 inline-flex h-2.5 w-2.5 flex-none rounded-full bg-[#B14A2B] shadow-[0_0_0_6px_rgba(177,74,43,0.12)] animate-pulse" />
+              <p className="text-sm font-medium leading-6 text-[#394136]">
+                Did you get in touch with this provider?
+              </p>
+            </div>
             <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 type="button"
@@ -153,10 +157,16 @@ export default function ActionTriggerToast({
             </div>
           </div>
         ) : toastState === 'final' ? (
-          <p className="text-sm font-medium leading-6 text-[#4A5147]">{FINAL_SUCCESS_MESSAGE}</p>
+          <div className="flex items-start gap-3">
+            <span className="mt-1 inline-flex h-2.5 w-2.5 flex-none rounded-full bg-[#B14A2B] shadow-[0_0_0_6px_rgba(177,74,43,0.12)]" />
+            <p className="text-sm font-medium leading-6 text-[#4A5147]">{FINAL_SUCCESS_MESSAGE}</p>
+          </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm font-medium leading-6 text-[#4A5147]">{successMessage}</p>
+            <div className="flex items-start gap-3">
+              <span className="mt-1 inline-flex h-2.5 w-2.5 flex-none rounded-full bg-[#B14A2B] shadow-[0_0_0_6px_rgba(177,74,43,0.12)] animate-pulse" />
+              <p className="text-sm font-medium leading-6 text-[#4A5147]">{successMessage}</p>
+            </div>
             <div>
               <label
                 htmlFor="action-trigger-note"
