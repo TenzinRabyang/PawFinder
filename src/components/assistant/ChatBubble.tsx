@@ -570,7 +570,7 @@ export default function ChatBubble() {
       const { error } = await supabase.from("user_feedback").insert(insertPayload);
 
       if (error) {
-        console.error("Failed to save assistant feedback", error);
+        console.error("Failed to save assistant feedback");
         setFeedbackState(message.id, {
           status: reason ? "choosing_reason" : "idle",
           ...(reason ? { selectedReason: reason } : {}),
@@ -583,8 +583,8 @@ export default function ChatBubble() {
         status: "submitted",
         ...(reason ? { selectedReason: reason } : {}),
       });
-    } catch (error) {
-      console.error("Failed to save assistant feedback", error);
+    } catch {
+      console.error("Failed to save assistant feedback");
       setFeedbackState(message.id, {
         status: reason ? "choosing_reason" : "idle",
         ...(reason ? { selectedReason: reason } : {}),

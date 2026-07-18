@@ -194,11 +194,7 @@ async function classifyAcrossPhotos(providerName: string, imageUrls: string[]) {
   try {
     return await requestOpenAiPhotoClassification(providerName, imageUrls)
   } catch (combinedError) {
-    console.warn('[photo-inference] combined OpenAI photo classification failed, retrying per photo', {
-      providerName,
-      photoCount: imageUrls.length,
-      error: combinedError instanceof Error ? combinedError.message : String(combinedError),
-    })
+    console.warn('[photo-inference] combined OpenAI photo classification failed, retrying per photo')
 
     const aggregatedAnimals = new Set<string>()
     const aggregatedBreeds = new Set<string>()
@@ -217,10 +213,7 @@ async function classifyAcrossPhotos(providerName: string, imageUrls: string[]) {
         }
       } catch (singleError) {
         lastSingleError = singleError
-        console.warn('[photo-inference] single-photo OpenAI classification failed', {
-          providerName,
-          error: singleError instanceof Error ? singleError.message : String(singleError),
-        })
+        console.warn('[photo-inference] single-photo OpenAI classification failed')
       }
     }
 
@@ -256,11 +249,8 @@ export async function inferAnimalsFromProviderPhotos({
   for (const photo of selectedPhotos) {
     try {
       imageUrls.push(await fetchPhotoAsDataUrl(photo.photo_reference, googleApiKey))
-    } catch (error) {
-      console.warn('[photo-inference] failed to fetch Google photo for analysis', {
-        providerName,
-        error: error instanceof Error ? error.message : String(error),
-      })
+    } catch {
+      console.warn('[photo-inference] failed to fetch Google photo for analysis')
     }
   }
 

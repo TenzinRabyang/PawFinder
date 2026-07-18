@@ -119,8 +119,6 @@ export default function LocationSearchControl({
         setSuggestions(nextSuggestions);
         setShowSuggestions(nextSuggestions.length > 0);
       } catch (fetchError) {
-        console.error("[location-search-control] autocomplete request failed", fetchError);
-
         if (requestCounterRef.current !== currentRequestId) {
           return;
         }
@@ -210,7 +208,6 @@ export default function LocationSearchControl({
         });
       }
     } catch (detailsError) {
-      console.error("[location-search-control] location details request failed", detailsError);
       setSelectedLocation(null);
       setAutocompleteError(
         detailsError instanceof DOMException && detailsError.name === "AbortError"

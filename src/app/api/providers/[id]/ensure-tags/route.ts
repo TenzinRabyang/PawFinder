@@ -57,6 +57,56 @@ type EnsureTagsBody = {
   } | null
 }
 
+function serializeProviderForClient(provider: Record<string, unknown> | null | undefined) {
+  if (!provider) {
+    return null
+  }
+
+  return {
+    id: provider.id ?? null,
+    google_place_id: provider.google_place_id ?? null,
+    name: provider.name ?? null,
+    address: provider.address ?? null,
+    postcode: provider.postcode ?? null,
+    category: provider.category ?? null,
+    subscription_tier: provider.subscription_tier ?? null,
+    website: provider.website ?? null,
+    phone: provider.phone ?? null,
+    breeds_specialised: Array.isArray(provider.breeds_specialised) ? provider.breeds_specialised : [],
+    services: Array.isArray(provider.services) ? provider.services : [],
+    services_inferred_from_name: Array.isArray(provider.services_inferred_from_name)
+      ? provider.services_inferred_from_name
+      : [],
+    animals_served: Array.isArray(provider.animals_served) ? provider.animals_served : [],
+    breeds_general_inferred: Array.isArray(provider.breeds_general_inferred)
+      ? provider.breeds_general_inferred
+      : [],
+    has_online_booking:
+      typeof provider.has_online_booking === 'boolean' ? provider.has_online_booking : false,
+    booking_url: provider.booking_url ?? null,
+    booking_checked_at: provider.booking_checked_at ?? null,
+    tagging_attempt_count:
+      typeof provider.tagging_attempt_count === 'number' ? provider.tagging_attempt_count : 0,
+    breed_analysis_exhausted:
+      typeof provider.breed_analysis_exhausted === 'boolean' ? provider.breed_analysis_exhausted : false,
+    photo_tagging_attempt_count:
+      typeof provider.photo_tagging_attempt_count === 'number' ? provider.photo_tagging_attempt_count : 0,
+    photo_breed_analysis_exhausted:
+      typeof provider.photo_breed_analysis_exhausted === 'boolean'
+        ? provider.photo_breed_analysis_exhausted
+        : false,
+    ai_tagged_at: provider.ai_tagged_at ?? null,
+    ai_tagging_skipped_low_content:
+      typeof provider.ai_tagging_skipped_low_content === 'boolean'
+        ? provider.ai_tagging_skipped_low_content
+        : false,
+    is_claimed: typeof provider.is_claimed === 'boolean' ? provider.is_claimed : false,
+    is_verified: typeof provider.is_verified === 'boolean' ? provider.is_verified : false,
+    review_summary: provider.review_summary ?? null,
+    photo_reference: provider.photo_reference ?? null,
+  }
+}
+
 function derivePostcode(address?: string) {
   const trimmedAddress = address?.trim()
   if (!trimmedAddress) return 'UNKNOWN'
@@ -102,50 +152,6 @@ function mergeUniqueValues(...values: Array<string[] | null | undefined>) {
       values.flatMap((value) => (Array.isArray(value) ? value : [])).filter((value): value is string => Boolean(value))
     )
   )
-}
-
-function getPhotoInferenceErrorDetails(error: unknown): {
-  category: 'missing_api_key' | 'openai_non_200' | 'json_parse_failure' | 'unknown'
-  errorName: string
-  errorMessage: string
-  openAiStatusCode?: number
-  openAiResponseBody?: string
-} {
-  const errorName = error instanceof Error ? error.name : typeof error
-  const errorMessage = error instanceof Error ? error.message : String(error)
-
-  if (errorMessage.includes('Missing OPENAI_API_KEY')) {
-    return {
-      category: 'missing_api_key' as const,
-      errorName,
-      errorMessage,
-    }
-  }
-
-  const openAiStatusMatch = errorMessage.match(/^OpenAI photo classification failed \((\d{3})\):\s*([\s\S]*)$/)
-  if (openAiStatusMatch) {
-    return {
-      category: 'openai_non_200' as const,
-      errorName,
-      errorMessage,
-      openAiStatusCode: Number(openAiStatusMatch[1]),
-      openAiResponseBody: openAiStatusMatch[2],
-    }
-  }
-
-  if (error instanceof SyntaxError) {
-    return {
-      category: 'json_parse_failure' as const,
-      errorName,
-      errorMessage,
-    }
-  }
-
-  return {
-    category: 'unknown' as const,
-    errorName,
-    errorMessage,
-  }
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -324,21 +330,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     }
 
-    const attemptNumber = usesWebsiteAnalysis
-      ? (providerRecord.photo_tagging_attempt_count || 0) + 1
-      : (providerRecord.tagging_attempt_count || 0) + 1
-
     try {
-      console.info('[photo-inference] running provider photo analysis', {
-        providerId: providerRecord.id,
-        providerName,
-        googlePlaceId: canonicalPlaceId,
-        availablePhotoCount: livePhotos.length,
-        photoLimit: 3,
-        attemptNumber,
-        supplementingWebsiteAnalysis: usesWebsiteAnalysis,
-      })
-
       const photoInference = await inferAnimalsFromProviderPhotos({
         providerName,
         photos: livePhotos,
@@ -369,7 +361,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
 
       let attemptFields: Record<string, number | boolean>
-      let exhausted = false
 
       if (usesWebsiteAnalysis) {
         const photoPersistence = getPhotoBreedAnalysisPersistence(providerRecord || {}, {
@@ -379,7 +370,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           photo_tagging_attempt_count: photoPersistence.photoTaggingAttemptCount,
           photo_breed_analysis_exhausted: photoPersistence.photoBreedAnalysisExhausted,
         }
-        exhausted = photoPersistence.photoBreedAnalysisExhausted
       } else {
         const standardPersistence = getBreedAnalysisPersistence(providerRecord || {}, {
           animals_served: providerRecord?.animals_served || [],
@@ -391,7 +381,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           tagging_attempt_count: standardPersistence.taggingAttemptCount,
           breed_analysis_exhausted: standardPersistence.breedAnalysisExhausted,
         }
-        exhausted = standardPersistence.breedAnalysisExhausted
       }
 
       const { error: tagUpdateError } = await persistProviderAiTags(supabaseAdmin, providerRecord.id, {
@@ -417,21 +406,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return { error: refreshedProviderError.message }
       }
 
-      console.info('[photo-inference] provider photo analysis completed', {
-        providerId: providerRecord.id,
-        providerName,
-        googlePlaceId: canonicalPlaceId,
-        availablePhotoCount: livePhotos.length,
-        analyzedPhotoCount: photoInference.analyzed_photo_count,
-        inferredAnimals: photoInference.breeds_general_inferred,
-        inferredBreeds: photoInference.breeds_specialised,
-        attemptNumber,
-        exhausted,
-        model: photoInference.model,
-      })
-
       return {
-        provider: refreshedProvider,
+        provider: serializeProviderForClient(refreshedProvider),
         source: responseSource,
         analysis_status: getBreedAnalysisStatus(refreshedProvider),
         photo_analysis: {
@@ -441,21 +417,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           breed_source: photoInference.breed_source,
         },
       }
-    } catch (error) {
-      const errorDetails = getPhotoInferenceErrorDetails(error)
-
-      console.error('[photo-inference] provider photo analysis failed', {
-        providerId: providerRecord.id,
-        providerName,
-        googlePlaceId: canonicalPlaceId,
-        errorCategory: errorDetails.category,
-        errorName: errorDetails.errorName,
-        errorMessage: errorDetails.errorMessage,
-        openAiStatusCode: errorDetails.openAiStatusCode,
-        openAiResponseBody: errorDetails.openAiResponseBody,
-        errorStack: error instanceof Error ? error.stack : undefined,
-        supplementingWebsiteAnalysis: usesWebsiteAnalysis,
-      })
+    } catch {
+      console.error('[photo-inference] provider photo analysis failed')
 
       const analyzedAt = new Date().toISOString()
       let attemptFields: Record<string, number | boolean>
@@ -503,7 +466,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
 
       return {
-        provider: refreshedProvider,
+        provider: serializeProviderForClient(refreshedProvider),
         source: responseSource,
         analysis_status: getBreedAnalysisStatus(refreshedProvider),
         analysis_error_reason: 'photo_analysis_failed',
@@ -535,7 +498,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       if (hasMeaningfulBreedAnalysis(providerWithoutWebsite)) {
         return NextResponse.json({
-          provider: providerWithoutWebsite,
+          provider: serializeProviderForClient(providerWithoutWebsite),
           source: 'database',
           analysis_status: getBreedAnalysisStatus(providerWithoutWebsite),
         })
@@ -543,7 +506,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       if (livePhotos.length === 0) {
         return NextResponse.json({
-          provider: providerWithoutWebsite,
+          provider: serializeProviderForClient(providerWithoutWebsite),
           source: 'database',
           analysis_status: 'no_website',
         })
@@ -551,7 +514,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
       if (!hasAnalysisAttemptsRemaining(providerWithoutWebsite)) {
         return NextResponse.json({
-          provider: providerWithoutWebsite,
+          provider: serializeProviderForClient(providerWithoutWebsite),
           source: 'database',
           analysis_status: getBreedAnalysisStatus(providerWithoutWebsite),
         })
@@ -571,10 +534,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     return NextResponse.json({
-      provider: {
+      provider: serializeProviderForClient({
         ...ephemeralProvider,
         services_inferred_from_name: inferredServicesFromName,
-      },
+      }),
       source: 'database',
       analysis_status: 'no_website',
     })
@@ -604,7 +567,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     !(shouldAttemptPhotoBreedSupplement(analysisSourceProvider()) && livePhotos.length > 0)
   ) {
     return NextResponse.json({
-      provider: analysisSourceProvider(),
+      provider: serializeProviderForClient(analysisSourceProvider()),
       source: 'database',
       analysis_status: getBreedAnalysisStatus(analysisSourceProvider()),
     })
@@ -616,7 +579,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     !(shouldAttemptPhotoBreedSupplement(analysisSourceProvider()) && livePhotos.length > 0)
   ) {
     return NextResponse.json({
-      provider: analysisSourceProvider(),
+      provider: serializeProviderForClient(analysisSourceProvider()),
       source: 'database',
       analysis_status: getBreedAnalysisStatus(analysisSourceProvider()),
     })
@@ -645,7 +608,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     if (!provider && !resolvedGeneratedCategory) {
       return NextResponse.json({
-        provider: {
+        provider: serializeProviderForClient({
           ...ephemeralProvider,
           website: normalizedWebsite,
           animals_served: aiTags.animals_served,
@@ -654,7 +617,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           breeds_specialised: aiTags.breeds_specialised,
           breeds_general_inferred: aiTags.breeds_general_inferred,
           ai_tagging_skipped_low_content: skippedLowContent,
-        },
+        }),
         source: 'generated',
         analysis_status: 'category_unresolved',
         pages_analysed: pagesAnalysed,
@@ -770,7 +733,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     return NextResponse.json({
-      provider: updated,
+        provider: serializeProviderForClient(updated),
       source: 'generated',
       analysis_status: getBreedAnalysisStatus(updated),
       pages_analysed: pagesAnalysed,
@@ -824,15 +787,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
           .single()
 
         if (blockedUpdateError && !isMissingInferredServicesColumnError(blockedUpdateError)) {
-          console.error('[ensure-tags] failed to persist blocked website fetch status', {
-            providerId: provider.id,
-            error: blockedUpdateError,
-          })
+          console.error('[ensure-tags] failed to persist blocked website fetch status')
           return NextResponse.json({ error: blockedUpdateError.message }, { status: 500 })
         }
 
         return NextResponse.json({
-          provider: blockedProvider
+          provider: serializeProviderForClient(blockedProvider
             ? blockedProvider
             : {
                 ...provider,
@@ -843,18 +803,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                   confirmedServices: provider?.services || [],
                 }),
                 ai_tagging_skipped_low_content: true,
-              },
+              }),
           source: 'database',
           analysis_status: 'fetch_blocked',
           analysis_error_reason: 'website_fetch_blocked',
         })
       }
 
-      console.error('[ensure-tags] failed to ensure provider tags', error)
+      console.error('[ensure-tags] failed to ensure provider tags')
       return NextResponse.json({ error: 'Provider website analysis failed' }, { status: 500 })
     }
-  } catch (error) {
-    console.error('[ensure-tags] unexpected failure', error)
+  } catch {
+    console.error('[ensure-tags] unexpected failure')
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

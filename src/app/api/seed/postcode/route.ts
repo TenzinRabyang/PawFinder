@@ -29,9 +29,16 @@ async function getPlaceDetails(placeId: string) {
 
 export async function POST(request: Request) {
   try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return NextResponse.json({ error: 'Supabase admin configuration is missing' }, { status: 500 })
+    }
+
     const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      supabaseUrl,
+      serviceRoleKey
     )
     const { postcode } = await request.json()
     if (!postcode) return NextResponse.json({ error: 'Postcode required' }, { status: 400 })
@@ -112,7 +119,6 @@ export async function POST(request: Request) {
             .single()
 
           if (providerError) {
-            console.error('Insert error', providerError)
             failed++
             continue
           }
@@ -129,15 +135,14 @@ export async function POST(request: Request) {
           }
           
           added++
-        } catch (e) {
-          console.error(e)
+        } catch {
           failed++
         }
       }
     }
 
     return NextResponse.json({ success: true, added, skipped, failed })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Failed to seed postcode data' }, { status: 500 })
   }
 }

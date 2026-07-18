@@ -70,7 +70,7 @@ export default function ActionTriggerToast({
         })
 
       if (error) {
-        console.error('Failed to save action trigger feedback', error)
+        console.error('Failed to save action trigger feedback')
         setFeedbackId(null)
         setSelectedRating(null)
         setToastState('prompt')
@@ -78,8 +78,8 @@ export default function ActionTriggerToast({
       }
 
       setToastState('collecting_details')
-    } catch (error) {
-      console.error('Failed to save action trigger feedback', error)
+    } catch {
+      console.error('Failed to save action trigger feedback')
       setFeedbackId(null)
       setSelectedRating(null)
       setToastState('prompt')
@@ -105,14 +105,14 @@ export default function ActionTriggerToast({
         .eq('id', feedbackId)
 
       if (error) {
-        console.error('Failed to update action trigger feedback', error)
+        console.error('Failed to update action trigger feedback')
         setToastState('collecting_details')
         return
       }
 
       setToastState('final')
-    } catch (error) {
-      console.error('Failed to update action trigger feedback', error)
+    } catch {
+      console.error('Failed to update action trigger feedback')
       setToastState('collecting_details')
     }
   }

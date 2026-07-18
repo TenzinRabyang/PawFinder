@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('pf_reviews')
     .insert({
       provider_id,
@@ -27,15 +27,13 @@ export async function POST(request: Request) {
       environment_rating,
       comment
     })
-    .select()
-    .single()
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   // Trigger AI summary generation if needed (async)
-  fetch(`${new URL(request.url).origin}/api/reviews/${provider_id}/ai-summary`, { method: 'POST' }).catch(console.error)
+  fetch(`${new URL(request.url).origin}/api/reviews/${provider_id}/ai-summary`, { method: 'POST' }).catch(() => {})
 
-  return NextResponse.json({ review: data })
+  return NextResponse.json({ success: true })
 }

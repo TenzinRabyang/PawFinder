@@ -319,12 +319,7 @@ async function collectWebsiteContext(website: string) {
     const remainingMs = TOTAL_FETCH_BUDGET_MS - elapsedMs
 
     if (remainingMs <= 0) {
-      console.warn('[provider-ai-tagging] total fetch budget exceeded before extra page fetch', {
-        normalizedWebsite: normalizedUrl.toString(),
-        pagesAttempted,
-        pagesFetched: pages.length,
-        totalBudgetMs: TOTAL_FETCH_BUDGET_MS,
-      })
+      console.warn('[provider-ai-tagging] total fetch budget exceeded before extra page fetch')
       break
     }
 
@@ -335,8 +330,8 @@ async function collectWebsiteContext(website: string) {
       if (page.text) {
         pages.push({ url: link, html: page.html, text: page.text })
       }
-    } catch (error) {
-      console.error('[provider-ai-tagging] failed to fetch extra page', { link, error })
+    } catch {
+      console.error('[provider-ai-tagging] failed to fetch extra page')
     }
   }
 
@@ -441,8 +436,8 @@ ${websiteContext}
       ),
       has_online_booking: typeof parsed.has_online_booking === 'boolean' ? parsed.has_online_booking : false,
     }
-  } catch (error) {
-    console.error('[provider-ai-tagging] DeepSeek analysis failed', error)
+  } catch {
+    console.error('[provider-ai-tagging] DeepSeek analysis failed')
     return {
       animals_served: [],
       services: [],
@@ -470,15 +465,6 @@ export async function tagProviderWebsite(website: string): Promise<TagProviderWe
         }
       })
       .find((value): value is string => Boolean(value)) || null
-
-  console.log('[provider-ai-tagging] website text size', {
-    normalizedWebsite,
-    originalCharCount,
-    truncatedCharCount,
-    skippedLowContent,
-    pagesAttempted,
-    pagesFetched,
-  })
 
   if (skippedLowContent) {
     return {

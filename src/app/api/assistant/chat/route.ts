@@ -396,11 +396,8 @@ function kickoffBackgroundEnrichment(
                   aiSummary
                 )
               }
-            } catch (error) {
-              console.warn('[assistant-chat] background live-details enrichment failed', {
-                placeId,
-                error: error instanceof Error ? error.message : String(error),
-              })
+            } catch {
+              console.warn('[assistant-chat] background live-details enrichment failed')
             }
           })()
         : Promise.resolve(),
@@ -408,11 +405,8 @@ function kickoffBackgroundEnrichment(
         ? (async () => {
             try {
               await triggerEnsureTags(request, provider, placeId, liveDetails)
-            } catch (error) {
-              console.warn('[assistant-chat] background ensure-tags enrichment failed', {
-                placeId,
-                error: error instanceof Error ? error.message : String(error),
-              })
+            } catch {
+              console.warn('[assistant-chat] background ensure-tags enrichment failed')
             }
           })()
         : Promise.resolve(),
@@ -454,12 +448,9 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
         ? triggerEnsureTags(request, provider, placeId, null, RAPID_ENRICHMENT_TIMEOUT_MS)
         : Promise.resolve(),
     ])
-  } catch (error) {
+  } catch {
     shouldContinueInBackground = true
-    console.warn('[assistant-chat] rapid provider enrichment fell back to basic details', {
-      placeId,
-      error: error instanceof Error ? error.message : String(error),
-    })
+    console.warn('[assistant-chat] rapid provider enrichment fell back to basic details')
   }
 
   try {
@@ -478,11 +469,8 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
         aiSummary.trim()
       )
     }
-  } catch (error) {
-    console.warn('[assistant-chat] provider enrichment persistence failed', {
-      placeId,
-      error: error instanceof Error ? error.message : String(error),
-    })
+  } catch {
+    console.warn('[assistant-chat] provider enrichment persistence failed')
   }
 
   if (shouldContinueInBackground) {
@@ -522,11 +510,8 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
         refreshedProvider?.review_summary?.trim() || aiSummary?.trim() || provider.review_summary,
       breed_tags: refreshedBreedTags,
     } satisfies AssistantProvider
-  } catch (error) {
-    console.warn('[assistant-chat] provider enrichment refresh failed', {
-      placeId,
-      error: error instanceof Error ? error.message : String(error),
-    })
+  } catch {
+    console.warn('[assistant-chat] provider enrichment refresh failed')
 
     return {
       ...provider,
@@ -625,10 +610,7 @@ async function getAssistantReply(
   const rawBody = await response.text()
 
   if (!response.ok) {
-    console.error('[assistant-chat] DeepSeek request failed', {
-      status: response.status,
-      body: rawBody,
-    })
+    console.error('[assistant-chat] DeepSeek request failed')
     throw new Error('DeepSeek request failed')
   }
 
@@ -648,8 +630,8 @@ export async function POST(request: Request) {
 
     try {
       body = await request.json()
-    } catch (error) {
-      console.error('[assistant-chat] Invalid JSON body', error)
+    } catch {
+      console.error('[assistant-chat] Invalid JSON body')
       return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
     }
 
@@ -738,7 +720,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: error.status })
     }
 
-    console.error('[assistant-chat] Unhandled assistant error', error)
+    console.error('[assistant-chat] Unhandled assistant error')
     return NextResponse.json({ error: SAFE_ASSISTANT_ERROR }, { status: 500 })
   }
 }

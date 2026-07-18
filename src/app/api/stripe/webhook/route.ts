@@ -2,9 +2,17 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-  apiVersion: '2025-01-27.acacia' as any,
-})
+function createStripeClient() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+
+  if (!stripeSecretKey) {
+    return null
+  }
+
+  return new Stripe(stripeSecretKey, {
+    apiVersion: '2025-01-27.acacia' as any,
+  })
+}
 
 function mapStripeStatusToTier(status: string, requestedTier: string | null | undefined) {
   if (status === 'active' || status === 'trialing') {
@@ -15,9 +23,17 @@ function mapStripeStatusToTier(status: string, requestedTier: string | null | un
 }
 
 export async function POST(request: Request) {
+  const stripe = createStripeClient()
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!stripe || !supabaseUrl || !serviceRoleKey) {
+    return NextResponse.json({ error: 'Missing Stripe webhook configuration' }, { status: 400 })
+  }
+
   const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    supabaseUrl,
+    serviceRoleKey
   )
   const signature = request.headers.get('stripe-signature')
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -31,8 +47,8 @@ export async function POST(request: Request) {
 
   try {
     event = stripe.webhooks.constructEvent(payload, signature, webhookSecret)
-  } catch (error: any) {
-    return NextResponse.json({ error: `Webhook signature verification failed: ${error.message}` }, { status: 400 })
+  } catch {
+    return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 })
   }
 
   try {
@@ -100,7 +116,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ received: true })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Webhook handling failed' }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'Webhook handling failed' }, { status: 500 })
   }
 }

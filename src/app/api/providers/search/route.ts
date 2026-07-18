@@ -81,7 +81,7 @@ async function getEnrichedPlaces(supabase: Awaited<ReturnType<typeof createClien
   const data = await res.json()
 
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-    console.error('Google API Error:', data)
+    console.error('[providers-search] Google Places request failed')
     throw new Error('Failed to fetch from Google Places')
   }
 
@@ -219,15 +219,11 @@ export async function GET(request: Request) {
       .maybeSingle()
 
     if (cacheReadError) {
-      console.error('[search-cache] failed to read pf_search_cache', {
-        cacheKey,
-        error: cacheReadError.message,
-      })
+      console.error('[search-cache] failed to read pf_search_cache')
       return NextResponse.json({ error: 'Search cache read failed' }, { status: 500 })
     }
 
     if (cached?.results) {
-      console.log(`[db_cache_hit] Search results loaded from pf_search_cache for key: ${cacheKey}`)
       enrichedPlaces = cached.results
       searchOrigin =
         cached.search_lat !== null && cached.search_lng !== null
@@ -237,7 +233,6 @@ export async function GET(request: Request) {
   }
 
   if (enrichedPlaces.length === 0) {
-    console.log(forceRefresh ? `[Cache BYPASS] Force refreshing search for key: ${cacheKey}` : `[live_fetch] Fetching fresh Google Places data for key: ${cacheKey}`)
     const coords = await getPostcodeCoords(postcode)
     if (!coords) {
       return NextResponse.json({ error: 'Invalid UK postcode' }, { status: 400 })
@@ -263,10 +258,7 @@ export async function GET(request: Request) {
       )
 
       if (cacheWriteError) {
-        console.error('[search-cache] failed to persist pf_search_cache', {
-          cacheKey,
-          error: cacheWriteError.message,
-        })
+        console.error('[search-cache] failed to persist pf_search_cache')
         return NextResponse.json({ error: 'Search cache write failed' }, { status: 500 })
       }
     } catch (error: any) {

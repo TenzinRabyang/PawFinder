@@ -35,12 +35,7 @@ export async function GET(request: Request) {
     const data = await response.json()
 
     if (!response.ok || (data.status !== 'OK' && data.status !== 'ZERO_RESULTS')) {
-      console.error('[location-autocomplete] Google Places autocomplete failed', {
-        input,
-        status: data.status,
-        errorMessage: data.error_message,
-      })
-
+      console.error('[location-autocomplete] Google Places autocomplete failed')
       return NextResponse.json({ error: 'Failed to load location suggestions' }, { status: 500 })
     }
 
@@ -52,8 +47,8 @@ export async function GET(request: Request) {
     }))
 
     return NextResponse.json({ suggestions })
-  } catch (error) {
-    console.error('[location-autocomplete] Request failed', error)
+  } catch {
+    console.error('[location-autocomplete] Request failed')
     return NextResponse.json({ error: 'Failed to load location suggestions' }, { status: 500 })
   }
 }

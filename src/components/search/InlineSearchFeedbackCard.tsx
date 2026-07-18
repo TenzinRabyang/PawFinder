@@ -80,7 +80,7 @@ export default function InlineSearchFeedbackCard({
         })
 
       if (error) {
-        console.error('Failed to save inline search feedback', error)
+        console.error('Failed to save inline search feedback')
         setFeedbackId(null)
         setCardState('prompt')
         setSelectedRating(null)
@@ -89,8 +89,8 @@ export default function InlineSearchFeedbackCard({
 
       markSessionComplete()
       setCardState('collecting_details')
-    } catch (error) {
-      console.error('Failed to save inline search feedback', error)
+    } catch {
+      console.error('Failed to save inline search feedback')
       setFeedbackId(null)
       setCardState('prompt')
       setSelectedRating(null)
@@ -117,14 +117,14 @@ export default function InlineSearchFeedbackCard({
         .eq('id', feedbackId)
 
       if (error) {
-        console.error('Failed to update inline search feedback', error)
+        console.error('Failed to update inline search feedback')
         setCardState('collecting_details')
         return
       }
 
       setCardState('final')
-    } catch (error) {
-      console.error('Failed to update inline search feedback', error)
+    } catch {
+      console.error('Failed to update inline search feedback')
       setCardState('collecting_details')
     }
   }

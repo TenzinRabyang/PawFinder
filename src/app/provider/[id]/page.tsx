@@ -357,12 +357,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           errorPayload = null
         }
 
-        console.error('[provider-page] ensure-tags returned non-OK response', {
-          placeId,
-          status: ensureTagsRes.status,
-          errorPayload,
-        })
-
         const errorMessage =
           typeof errorPayload === 'string'
             ? errorPayload
@@ -381,12 +375,12 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       setBreedTagStatus(getBreedAnalysisStatus(baseProvider))
     } catch (error: unknown) {
       if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-        console.warn('[provider-page] ensure-tags timed out', { id: placeId })
+        console.warn('[provider-page] ensure-tags timed out')
         setBreedTagStatus('delayed')
         return
       }
 
-      console.error('[provider-page] ensure-tags failed', error)
+      console.error('[provider-page] ensure-tags failed')
       setBreedTagStatus('unavailable')
     }
   }, [])
@@ -427,8 +421,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       .then(({ data: { user } }) => {
         setUser(user)
       })
-      .catch((error) => {
-        console.error('Failed to load current user for provider page', error)
+      .catch(() => {
+        console.error('Failed to load current user for provider page')
       })
 
     // Resolve either an internal provider UUID or a Google Place ID, then
@@ -497,7 +491,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
           res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
         } catch (error: unknown) {
           if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
-            console.warn('[provider-page] live details timed out', { id, detailsUrl })
+            console.warn('[provider-page] live details timed out')
           } else {
             throw error
           }
@@ -514,11 +508,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             liveDetailsSnapshot: data,
           })
         }
-      } else if (shouldHydrateLiveDetails && !canFetchLiveDetails) {
-        console.warn('[provider-page] skipped live-details fetch for unresolved route parameter', {
-          id,
-          canonicalPlaceId,
-        })
       }
 
       // 2. Fetch our DB data (using google_place_id)
@@ -658,8 +647,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         liveDetailsSnapshot: !data.error ? data : canonicalCachedLiveDetails || undefined,
         reviewsSnapshot: dbProvider?.id ? resolvedReviews : [],
       })
-    } catch (error) {
-      console.error(error)
+    } catch {
+      console.error('Failed to load provider page data')
       setBreedTagStatus('unavailable')
     }
 
@@ -733,8 +722,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       window.setTimeout(() => {
         setShowCopiedState(false)
       }, 1500)
-    } catch (error) {
-      console.error('Failed to copy phone number', error)
+    } catch {
+      console.error('Failed to copy phone number')
     }
   }
 

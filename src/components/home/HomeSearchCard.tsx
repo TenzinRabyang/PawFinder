@@ -19,27 +19,10 @@ export default function HomeSearchCard({
         lng: String(context.lng),
       });
 
-      const debugPayload = {
-        path: "selected-location",
-        selectedLocation: context,
-        searchUrl: `/search?${params.toString()}`,
-      };
-
-      console.log("[home-page] handleSearch selected-location submit", debugPayload);
-      sessionStorage.setItem("pawfinder:lastHandleSearchSubmit", JSON.stringify(debugPayload));
       window.location.assign(`/search?${params.toString()}`);
       return;
     }
 
-    const debugPayload = {
-      path: "postcode",
-      postcodeInput: context.label,
-      normalizedInput: context.postcode,
-      searchUrl: `/search?postcode=${encodeURIComponent(context.postcode)}`,
-    };
-
-    console.log("[home-page] handleSearch postcode submit", debugPayload);
-    sessionStorage.setItem("pawfinder:lastHandleSearchSubmit", JSON.stringify(debugPayload));
     window.location.assign(`/search?postcode=${encodeURIComponent(context.postcode)}`);
   };
 

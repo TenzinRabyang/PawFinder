@@ -56,7 +56,7 @@ async function getEnrichedPlaces(
   const data = await res.json()
 
   if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-    console.error('Google API Error:', data)
+    console.error('[providers-search-by-location] Google Places request failed')
     throw new Error('Failed to fetch from Google Places')
   }
 

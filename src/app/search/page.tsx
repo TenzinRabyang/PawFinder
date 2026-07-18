@@ -66,17 +66,6 @@ function SearchContent() {
   const selectedLat = searchParams.get('lat')
   const selectedLng = searchParams.get('lng')
   const selectedLocationLabel = searchParams.get('location')
-  console.log('[search-page] render', {
-    postcode: searchParams.get('postcode'),
-    lat: selectedLat,
-    lng: selectedLng,
-    location: selectedLocationLabel,
-    animal: searchParams.get('animal'),
-    category: searchParams.get('category'),
-    service: searchParams.get('service'),
-    breed: searchParams.get('breed'),
-    href: typeof window !== 'undefined' ? window.location.href : 'server',
-  })
   const [pf_providers, setProviders] = useState<SearchProvider[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -169,21 +158,9 @@ function SearchContent() {
       selectedLat && selectedLng
         ? `/api/providers/search-by-location?${params.toString()}`
         : `/api/providers/search?${params.toString()}`
-    console.log('[search-page] fetchProviders start', {
-      filters,
-      requestUrl,
-      href: window.location.href,
-    })
-
     try {
       const res = await fetch(requestUrl)
       const data = await res.json()
-      console.log('[search-page] fetchProviders response', {
-        ok: res.ok,
-        status: res.status,
-        statusText: res.statusText,
-        data,
-      })
       
       if (!res.ok) {
         throw new Error(data.error || 'Failed to fetch providers')
@@ -198,12 +175,6 @@ function SearchContent() {
       setProviders(providers)
 
     } catch (err: unknown) {
-      console.error('[search-page] fetchProviders error', {
-        message: getErrorMessage(err),
-        stack: err instanceof Error ? err.stack : null,
-        filters,
-        href: window.location.href,
-      })
       setError(getErrorMessage(err))
       setProviders([])
     } finally {
@@ -223,15 +194,6 @@ function SearchContent() {
       breed: filters.breed,
     })
 
-    console.log('[search-page] postcode effect', {
-      postcode: filters.postcode,
-      lat: selectedLat,
-      lng: selectedLng,
-      filters,
-      autoFetchKey,
-      lastAutoFetchKey: lastAutoFetchKeyRef.current,
-      href: window.location.href,
-    })
     if ((filters.postcode || (selectedLat && selectedLng)) && lastAutoFetchKeyRef.current !== autoFetchKey) {
       lastAutoFetchKeyRef.current = autoFetchKey
       void fetchProviders()

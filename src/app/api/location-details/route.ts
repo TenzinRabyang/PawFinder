@@ -24,12 +24,7 @@ export async function GET(request: Request) {
     const data = await response.json()
 
     if (!response.ok || data.status !== 'OK' || !data.result?.geometry?.location) {
-      console.error('[location-details] Google Places details failed', {
-        placeId,
-        status: data.status,
-        errorMessage: data.error_message,
-      })
-
+      console.error('[location-details] Google Places details failed')
       return NextResponse.json({ error: 'Failed to load location details' }, { status: 500 })
     }
 
@@ -40,8 +35,8 @@ export async function GET(request: Request) {
       lat: data.result.geometry.location.lat,
       lng: data.result.geometry.location.lng,
     })
-  } catch (error) {
-    console.error('[location-details] Request failed', error)
+  } catch {
+    console.error('[location-details] Request failed')
     return NextResponse.json({ error: 'Failed to load location details' }, { status: 500 })
   }
 }

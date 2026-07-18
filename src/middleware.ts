@@ -2,41 +2,6 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  const getErrorDetails = (error: unknown) => {
-    if (error instanceof Error) {
-      return {
-        errorMessage: error.message,
-        errorStack: error.stack ?? null,
-        errorName: error.name,
-      }
-    }
-
-    return {
-      errorMessage: String(error),
-      errorStack: null,
-      errorName: null,
-    }
-  }
-
-  const requestMeta = {
-    url: request.url,
-    pathname: request.nextUrl.pathname,
-    method: request.method,
-    host: request.headers.get('host'),
-    xForwardedHost: request.headers.get('x-forwarded-host'),
-    xForwardedProto: request.headers.get('x-forwarded-proto'),
-    origin: request.headers.get('origin'),
-    referer: request.headers.get('referer'),
-    secFetchSite: request.headers.get('sec-fetch-site'),
-    hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-    hasAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-  }
-  console.log('[middleware] start', requestMeta)
-
-  if (request.nextUrl.pathname.startsWith('/_next/webpack-hmr')) {
-    console.log('[middleware] webpack-hmr request', requestMeta)
-  }
-
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -50,7 +15,7 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           supabaseResponse = NextResponse.next({
             request,
           })
@@ -63,26 +28,12 @@ export async function middleware(request: NextRequest) {
   )
 
   try {
-    const { data, error } = await supabase.auth.getUser()
+    const { error } = await supabase.auth.getUser()
     if (error) {
-      console.error('[middleware] auth.getUser returned error', {
-        ...requestMeta,
-        errorMessage: error.message,
-        errorName: error.name,
-        errorStatus: 'status' in error ? error.status : null,
-      })
-    } else {
-      console.log('[middleware] auth.getUser ok', {
-        ...requestMeta,
-        userPresent: Boolean(data?.user),
-      })
+      console.error('[middleware] auth.getUser returned error')
     }
   } catch (error: unknown) {
-    const errorDetails = getErrorDetails(error)
-    console.error('[middleware] auth.getUser threw', {
-      ...requestMeta,
-      ...errorDetails,
-    })
+    console.error('[middleware] auth.getUser threw')
     throw error
   }
 

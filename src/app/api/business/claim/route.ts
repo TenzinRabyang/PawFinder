@@ -239,7 +239,7 @@ export async function POST(request: Request) {
         })
 
         if (taggingError) {
-          console.error('[business-claim] failed to persist provider AI tags during claim', taggingError)
+          console.error('[business-claim] failed to persist provider AI tags during claim')
           taggingResult = {
             status: 'failed',
             message: getWebsiteAnalysisMessage('failed'),
@@ -291,7 +291,7 @@ export async function POST(request: Request) {
             .eq('id', providerId)
 
           if (blockedUpdateError && !isMissingInferredServicesColumnError(blockedUpdateError)) {
-            console.error('[business-claim] failed to persist blocked website fetch status', blockedUpdateError)
+            console.error('[business-claim] failed to persist blocked website fetch status')
             taggingResult = {
               status: 'failed',
               message: getWebsiteAnalysisMessage('failed'),
@@ -307,7 +307,7 @@ export async function POST(request: Request) {
             }
           }
         } else {
-          console.error('[business-claim] website analysis failed during claim', error)
+          console.error('[business-claim] website analysis failed during claim')
           taggingResult = {
             status: 'failed',
             message: getWebsiteAnalysisMessage('failed'),
@@ -317,8 +317,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, providerId, tagging: taggingResult })
-  } catch (error) {
-    console.error('[business-claim] unexpected failure', error)
+  } catch {
+    console.error('[business-claim] unexpected failure')
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -290,22 +290,11 @@ export async function resolvePlaceDetailsWithAutoHeal({
       const persistence = buildPlaceIdRefreshPersistence(provider, false)
       const { error } = await persistProviderPlaceIdRefreshState(supabase, provider.id, persistence)
       if (error) {
-        console.error('[place-id-recovery] failed to persist exhausted attempt state', {
-          source,
-          providerId: provider.id,
-          requestedPlaceId,
-          error,
-        })
+        console.error('[place-id-recovery] failed to persist exhausted attempt state')
       }
     }
 
-    console.warn('[place-id-recovery] unable to resolve replacement place id', {
-      source,
-      requestedPlaceId,
-      providerId: provider?.id || null,
-      providerName: provider?.name || null,
-      providerAddress: provider?.address || null,
-    })
+    console.warn('[place-id-recovery] unable to resolve replacement place id')
 
     return {
       status: detailsResponse.status || 'NOT_FOUND',
@@ -339,23 +328,11 @@ export async function resolvePlaceDetailsWithAutoHeal({
     })
 
     if (error) {
-      console.error('[place-id-recovery] failed to persist healed place id mapping', {
-        source,
-        providerId: provider.id,
-        requestedPlaceId,
-        resolvedPlaceId,
-        error,
-      })
+      console.error('[place-id-recovery] failed to persist healed place id mapping')
     }
   }
 
-  console.info('[place-id-recovery] healed obsolete place id', {
-    source,
-    providerId: provider?.id || null,
-    providerName: provider?.name || healedResponse.result.name || null,
-    fromPlaceId: requestedPlaceId,
-    toPlaceId: resolvedPlaceId,
-  })
+  console.info('[place-id-recovery] healed obsolete place id')
 
   return {
     status: 'OK',

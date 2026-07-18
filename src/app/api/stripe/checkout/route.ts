@@ -2,11 +2,20 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-  apiVersion: '2025-01-27.acacia' as any
-})
+function createStripeClient() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+
+  if (!stripeSecretKey) {
+    return null
+  }
+
+  return new Stripe(stripeSecretKey, {
+    apiVersion: '2025-01-27.acacia' as any,
+  })
+}
 
 export async function POST(request: Request) {
+  const stripe = createStripeClient()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -28,14 +37,23 @@ export async function POST(request: Request) {
   }
 
   const prices = {
-    verified: 'price_mock_verified', // Replace with real price ID
-    premium: 'price_mock_premium'
+    verified: process.env.STRIPE_PRICE_ID_VERIFIED,
+    premium: process.env.STRIPE_PRICE_ID_PREMIUM,
   }
 
   const priceId = prices[tier as keyof typeof prices]
 
   if (!priceId) {
-    return NextResponse.json({ error: 'Invalid tier' }, { status: 400 })
+    return NextResponse.json({ error: 'Stripe pricing is not configured for this tier' }, { status: 503 })
+  }
+
+  if (!stripe) {
+    return NextResponse.json(
+      {
+        error: 'Stripe is not configured in this environment. Add Stripe secrets to create a real checkout session.',
+      },
+      { status: 503 }
+    )
   }
 
   try {
@@ -58,16 +76,7 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({ url: session.url })
-  } catch (err: any) {
-    if (process.env.STRIPE_SECRET_KEY) {
-      return NextResponse.json({ error: err.message }, { status: 500 })
-    }
-
-    return NextResponse.json(
-      {
-        error: 'Stripe is not configured in this environment. Add Stripe secrets to create a real checkout session.',
-      },
-      { status: 503 }
-    )
+  } catch {
+    return NextResponse.json({ error: 'Unable to create checkout session' }, { status: 500 })
   }
 }

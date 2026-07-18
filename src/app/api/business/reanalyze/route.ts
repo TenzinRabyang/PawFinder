@@ -157,7 +157,7 @@ export async function POST() {
       })
     }
 
-    console.error('[business-reanalyze] failed to run provider AI tagging', error)
+    console.error('[business-reanalyze] failed to run provider AI tagging')
     return NextResponse.json({
       success: true,
       tagging: {
