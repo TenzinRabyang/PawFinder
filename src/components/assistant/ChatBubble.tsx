@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import LocationSearchControl, {
   type LocationSearchContext,
 } from "@/components/location/LocationSearchControl";
+import { consumeDailyUsage, getDailyUsageState } from "@/lib/daily-client-limits";
 import { createClient } from "@/utils/supabase/client";
 
 type ChatMessage = {
@@ -56,6 +57,9 @@ const QUICK_STARTER_CHIPS = [
   "Cattery nearby",
   "Dog walkers",
 ];
+const CHAT_DAILY_LIMIT = 5;
+const CHAT_DAILY_LIMIT_STORAGE_KEY = "pawfinder_chat_count";
+const CHAT_DAILY_LIMIT_PLACEHOLDER = "Daily chat limit reached. See you tomorrow!";
 const FEEDBACK_THANK_YOU_MESSAGE = "Thank you for your feedback! ❤️";
 const FEEDBACK_ERROR_MESSAGE = "Couldn’t save feedback. Please try again.";
 const FEEDBACK_REASONS: Array<{ label: string; value: FeedbackReason }> = [
@@ -226,6 +230,9 @@ export default function ChatBubble() {
   );
   const [isLoading, setIsLoading] = useState(false);
   const [isCollectingLocation, setIsCollectingLocation] = useState(false);
+  const [isChatLimitReached, setIsChatLimitReached] = useState(() =>
+    getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
+  );
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const urlLocationContext = useMemo(
@@ -307,6 +314,12 @@ export default function ChatBubble() {
   }, [activeLocationContext]);
   const hasConversation = messages.length > 0;
 
+  const consumeChatAllowance = () => {
+    const nextUsage = consumeDailyUsage(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT);
+    setIsChatLimitReached(nextUsage.isLimited);
+    return nextUsage.allowed;
+  };
+
   const sendConversation = async (
     conversationMessages: ChatMessage[],
     nextLocationContext: LocationSearchContext | null
@@ -362,7 +375,7 @@ export default function ChatBubble() {
       setMessages((currentMessages) => [
         ...currentMessages,
         {
-          id: `assistant-${Date.now()}`,
+          id: `assistant-${crypto.randomUUID()}`,
           role: "assistant",
           content: reply,
           providers: providerCards,
@@ -392,7 +405,7 @@ export default function ChatBubble() {
       setMessages((currentMessages) => [
         ...currentMessages,
         {
-          id: `assistant-duplicate-${Date.now()}`,
+          id: `assistant-duplicate-${crypto.randomUUID()}`,
           role: "assistant",
           content: DUPLICATE_MESSAGE_WARNING,
         },
@@ -402,11 +415,18 @@ export default function ChatBubble() {
       return;
     }
 
-    const timestamp = Date.now();
+    if (!consumeChatAllowance()) {
+      setDraft("");
+      setIsOpen(true);
+      return;
+    }
+
+    const userMessageId = `user-${crypto.randomUUID()}`;
+    const assistantErrorId = `assistant-error-${crypto.randomUUID()}`;
     const nextMessages = [
       ...messages,
       {
-        id: `user-${timestamp}`,
+        id: userMessageId,
         role: "user" as const,
         content: trimmedDraft,
       },
@@ -428,7 +448,7 @@ export default function ChatBubble() {
       setMessages((currentMessages) => [
         ...currentMessages,
         {
-          id: `assistant-error-${timestamp}`,
+          id: assistantErrorId,
           role: "assistant",
           content: errorMessage,
         },
@@ -448,15 +468,19 @@ export default function ChatBubble() {
   };
 
   const handleResolvedLocation = async (nextLocationContext: LocationSearchContext) => {
+    if (!consumeChatAllowance()) {
+      return;
+    }
+
     const locationMessage: ChatMessage =
       nextLocationContext.kind === "postcode"
         ? {
-            id: `user-location-${Date.now()}`,
+            id: `user-location-${crypto.randomUUID()}`,
             role: "user",
             content: `My postcode is ${nextLocationContext.postcode}.`,
           }
         : {
-            id: `user-location-${Date.now()}`,
+            id: `user-location-${crypto.randomUUID()}`,
             role: "user",
             content: `I'm looking around ${nextLocationContext.label}.`,
           };
@@ -483,7 +507,7 @@ export default function ChatBubble() {
       setMessages((currentMessages) => [
         ...currentMessages,
         {
-          id: `assistant-location-error-${Date.now()}`,
+          id: `assistant-location-error-${crypto.randomUUID()}`,
           role: "assistant",
           content: errorMessage,
         },
@@ -815,7 +839,7 @@ export default function ChatBubble() {
                           onClick={() => {
                             void handleQuickStarter(starter);
                           }}
-                          disabled={isLoading}
+                          disabled={isLoading || isChatLimitReached}
                           className="rounded-full border border-[#DED3C5] bg-white px-3 py-2 text-xs font-semibold text-[#5B6258] transition hover:border-[#B14A2B] hover:text-[#B14A2B] disabled:cursor-not-allowed disabled:opacity-70"
                         >
                           {starter === "Vets in Sheffield"
@@ -826,6 +850,11 @@ export default function ChatBubble() {
                         </button>
                       ))}
                     </div>
+                    {isChatLimitReached ? (
+                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#8C5B4D]">
+                        {CHAT_DAILY_LIMIT_PLACEHOLDER}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -889,17 +918,23 @@ export default function ChatBubble() {
                   <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#8C5B4D]">
                     Add your postcode or city
                   </p>
-                  <LocationSearchControl
-                    key={activeLocationContext?.label || "assistant-location-control"}
-                    id="assistant-location"
-                    label="Location for nearby matches"
-                    submitLabel="Use this location"
-                    variant="assistant"
-                    autoSubmitOnSelect
-                    disabled={isLoading}
-                    initialQuery={activeLocationContext?.label || ""}
-                    onResolved={handleResolvedLocation}
-                  />
+                  {isChatLimitReached ? (
+                    <p className="text-sm font-medium leading-6 text-[#7A3E2C]">
+                      {CHAT_DAILY_LIMIT_PLACEHOLDER}
+                    </p>
+                  ) : (
+                    <LocationSearchControl
+                      key={activeLocationContext?.label || "assistant-location-control"}
+                      id="assistant-location"
+                      label="Location for nearby matches"
+                      submitLabel="Use this location"
+                      variant="assistant"
+                      autoSubmitOnSelect
+                      disabled={isLoading}
+                      initialQuery={activeLocationContext?.label || ""}
+                      onResolved={handleResolvedLocation}
+                    />
+                  )}
                 </div>
               ) : (
                 <form
@@ -919,15 +954,19 @@ export default function ChatBubble() {
                         value={draft}
                         onChange={(event) => setDraft(event.target.value)}
                         maxLength={1000}
-                        placeholder="Describe the care you need..."
-                        disabled={isLoading}
+                        placeholder={
+                          isChatLimitReached
+                            ? CHAT_DAILY_LIMIT_PLACEHOLDER
+                            : "Describe the care you need..."
+                        }
+                        disabled={isLoading || isChatLimitReached}
                         className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
                       />
                       <PawPrint className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#B14A2B]" />
                     </div>
                     <button
                       type="submit"
-                      disabled={!draft.trim() || isLoading}
+                      disabled={!draft.trim() || isLoading || isChatLimitReached}
                       className="inline-flex h-12 items-center gap-2 rounded-[1.1rem] bg-[#B14A2B] px-4 text-sm font-semibold text-[#FFF8F2] shadow-[0_18px_34px_-22px_rgba(177,74,43,0.8)] transition hover:bg-[#973D24] disabled:cursor-not-allowed disabled:bg-[#CFA393] disabled:shadow-none"
                     >
                       <span>Send</span>
@@ -942,7 +981,19 @@ export default function ChatBubble() {
 
         <button
           type="button"
-          onClick={() => setIsOpen((currentValue) => !currentValue)}
+          onClick={() =>
+            setIsOpen((currentValue) => {
+              const nextValue = !currentValue;
+
+              if (nextValue) {
+                setIsChatLimitReached(
+                  getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
+                );
+              }
+
+              return nextValue;
+            })
+          }
           aria-expanded={isOpen}
           aria-controls="pawfinder-assistant-panel"
           className="group relative inline-flex h-16 w-16 items-center justify-center rounded-full border border-[#D6C8B3] bg-[radial-gradient(circle_at_30%_30%,#F7E5DD_0%,#B14A2B_68%,#93391F_100%)] text-[#FFF8F2] shadow-[0_24px_44px_-24px_rgba(177,74,43,0.75)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_48px_-22px_rgba(177,74,43,0.8)]"

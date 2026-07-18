@@ -8,6 +8,7 @@ import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star } from 'lucide-r
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import InlineSearchFeedbackCard from '@/components/search/InlineSearchFeedbackCard'
+import { consumeDailyUsage } from '@/lib/daily-client-limits'
 import { removeCategoryDuplicateServices } from '@/lib/provider-name-service-inference'
 import { primeProviderSessionCache } from '@/lib/provider-session-cache'
 
@@ -52,6 +53,10 @@ type LocationSuggestion = {
 
 const LOCATION_REQUEST_TIMEOUT_MS = 15000
 const POSTCODE_REGEX = /^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/i
+const SEARCH_DAILY_LIMIT = 10
+const SEARCH_DAILY_LIMIT_STORAGE_KEY = 'pawfinder_search_count'
+const SEARCH_DAILY_LIMIT_MESSAGE =
+  'Daily search limit reached to keep PawFinder free for everyone. Come back tomorrow! 🐾'
 
 function SearchContent() {
   const RESULTS_PAGE_SIZE = 5
@@ -77,6 +82,7 @@ function SearchContent() {
 
   const [error, setError] = useState<string | null>(null)
   const [locationError, setLocationError] = useState<string | null>(null)
+  const [searchLimitMessage, setSearchLimitMessage] = useState<string | null>(null)
   const [isApplyingFilters, setIsApplyingFilters] = useState(false)
   const [featuredLoadStatus, setFeaturedLoadStatus] = useState<Record<string, FeaturedLoadStatus>>({})
   const [visibleCount, setVisibleCount] = useState(RESULTS_PAGE_SIZE)
@@ -346,6 +352,14 @@ function SearchContent() {
     location: string
   }) => {
     setLocationError(null)
+    const nextDailyUsage = consumeDailyUsage(SEARCH_DAILY_LIMIT_STORAGE_KEY, SEARCH_DAILY_LIMIT)
+
+    if (!nextDailyUsage.allowed) {
+      setSearchLimitMessage(SEARCH_DAILY_LIMIT_MESSAGE)
+      return
+    }
+
+    setSearchLimitMessage(null)
     setVisibleCount(RESULTS_PAGE_SIZE)
     lastAutoFetchKeyRef.current = null
     setIsApplyingFilters(true)
@@ -567,6 +581,7 @@ function SearchContent() {
                   defaultValue={selectedLocationLabel || filters.postcode}
                   onChange={() => {
                     setLocationError(null)
+                    setSearchLimitMessage(null)
                   }}
                   placeholder="City, town, or postcode"
                   className="w-full bg-transparent text-sm text-stone-700 outline-none placeholder:text-stone-400"
@@ -636,6 +651,12 @@ function SearchContent() {
             {locationError && (
               <p className="text-[11px] leading-relaxed text-[#B14A2B] md:col-span-5">
                 {locationError}
+              </p>
+            )}
+
+            {searchLimitMessage && (
+              <p className="text-[11px] leading-relaxed text-[#B14A2B] md:col-span-5">
+                {searchLimitMessage}
               </p>
             )}
 
