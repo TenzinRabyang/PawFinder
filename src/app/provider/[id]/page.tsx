@@ -3,8 +3,7 @@
 import { useState, useEffect, use, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Star, MapPin, CheckCircle, Info, ShieldCheck, Copy, Check } from 'lucide-react'
-import Link from 'next/link'
+import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
@@ -53,6 +52,7 @@ type ProviderProfileRecord = {
   is_claimed?: boolean | null
   is_verified?: boolean | null
   review_summary?: string | null
+  photo_reference?: string | null
   [key: string]: unknown
 }
 
@@ -191,33 +191,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
 
-  const getBreedStatusMessage = (status: typeof breedTagStatus) => {
-    switch (status) {
-      case 'confirmed':
-        return 'Animal coverage has been confirmed, but no breed-specific support was saved yet.'
-      case 'fetch_blocked':
-        return "We weren't able to access this business's website for automatic analysis."
-      case 'retrying':
-        return "We're still gathering breed info for this business."
-      case 'photo_retrying':
-        return "We couldn't confirm animals from the available Google photos yet, but we'll keep trying while attempts remain."
-      case 'photo_exhausted':
-        return "We checked this business's Google photos but still couldn't confidently confirm which animals appear."
-      case 'no_website':
-        return "This business hasn't listed a website, so we can't automatically analyse website content yet."
-      case 'category_unresolved':
-        return "We couldn't classify this business from the available listing data yet, so automatic website analysis hasn't started."
-      case 'unavailable':
-        return 'Breed coverage could not be confirmed from the business website.'
-      case 'services_only':
-        return "We found this business's services, but couldn't confirm which animals or breeds they support from the website."
-      case 'delayed':
-        return 'We are still analysing this business. Check back shortly for saved breed coverage.'
-      default:
-        return 'Breed coverage is not available for this profile yet.'
-    }
-  }
-
   const getReviewAverage = (review: NativeReview) =>
     Number((((review.handling_rating || 0) + (review.environment_rating || 0)) / 2).toFixed(1))
 
@@ -257,22 +230,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   }
 
   const breedLabelMap = new Map<string, string>(BREED_OPTIONS.map((breed) => [breed.value, breed.label]))
-  const breedAnimalMap = new Map<string, string>(BREED_OPTIONS.map((breed) => [breed.value, breed.animal]))
   const getBreedLabel = (value: string) => breedLabelMap.get(value) || formatServiceLabel(value)
   const displayedBreedValues = Array.isArray(provider?.breeds_specialised) ? provider.breeds_specialised : []
   const generalCoverageAnimals = Array.isArray(provider?.breeds_general_inferred) ? provider.breeds_general_inferred : []
   const supportedAnimals = Array.isArray(provider?.animals_served) ? provider.animals_served : []
-  const groupedBreeds = displayedBreedValues.reduce(
-        (groups: Record<string, string[]>, breed: string) => {
-          const animal = breedAnimalMap.get(breed) || 'other'
-          if (!groups[animal]) groups[animal] = []
-          if (!groups[animal].includes(breed)) {
-            groups[animal].push(breed)
-          }
-          return groups
-        },
-        {}
-      )
   const generalCoverageLabels = generalCoverageAnimals.map((animal: string) =>
     animal === 'dog' ? 'Dogs' : animal === 'cat' ? 'Cats' : animal === 'rabbit' ? 'Rabbits' : animal
   )
@@ -304,21 +265,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const isAnalysisPending = breedTagStatus === 'loading' || breedTagStatus === 'generating'
   const analysisLoadingLabel =
     breedTagStatus === 'generating' ? 'Analysing this business...' : 'Checking saved profile details...'
-
-  const nativeRatingSummary =
-    pf_reviews.length > 0
-      ? {
-          score: Number(
-            (
-              pf_reviews.reduce(
-                (acc, review) => acc + ((review.handling_rating || 0) + (review.environment_rating || 0)) / 2,
-                0
-              ) / pf_reviews.length
-            ).toFixed(1)
-          ),
-          count: pf_reviews.length,
-        }
-      : null
 
   const syncProviderSessionCache = ({
     placeId,
@@ -582,6 +528,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             address: data.formatted_address || dbProvider.address,
             website: data.website || dbProvider.website,
             phone: data.formatted_phone_number || dbProvider.phone,
+            photo_reference:
+              (typeof cachedProvider?.photo_reference === 'string' && cachedProvider.photo_reference) ||
+              data.photos?.[0]?.photo_reference ||
+              null,
           }
         : {
             id,
@@ -610,6 +560,10 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
             photo_breed_analysis_exhausted: false,
             ai_tagging_skipped_low_content: false,
             is_claimed: false,
+            photo_reference:
+              (typeof cachedProvider?.photo_reference === 'string' && cachedProvider.photo_reference) ||
+              data.photos?.[0]?.photo_reference ||
+              null,
           }
 
       const currentAnalysisStatus = getBreedAnalysisStatus(resolvedProvider)
@@ -858,11 +812,14 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const callNumber = getDisplayPhoneNumber(provider.phone || liveDetails?.formatted_phone_number)
   const isOpenNow = liveDetails?.opening_hours?.open_now
   const livePhotos = liveDetails?.photos ?? []
+  const primaryPhotoReference =
+    (typeof provider.photo_reference === 'string' && provider.photo_reference) ||
+    livePhotos[0]?.photo_reference ||
+    null
   const liveReviews = liveDetails?.reviews ?? []
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
   const locationLabel = provider.address || provider.postcode || 'Address unavailable'
-  const hasWebsiteForAnalysis = Boolean((provider.website || liveDetails?.website || '').trim())
   const consolidatedBreedBadges = Array.from(
     new Map(
       [
@@ -875,6 +832,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         .map((label) => [label.toLowerCase(), label])
     ).values()
   )
+  const directionsQuery = encodeURIComponent(`${provider.name} ${locationLabel}`)
+  const directionsUrl = provider.google_place_id
+    ? `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(provider.google_place_id)}&query=${directionsQuery}`
+    : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
+  const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
@@ -884,11 +846,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         <div className="absolute right-[-3rem] top-10 h-56 w-56 rounded-full bg-[#A3B39A]/25 blur-3xl" />
 
         <div className="relative h-56 overflow-hidden sm:h-72">
-          {canShowLivePreview && liveDetails?.photos?.[0] ? (
+          {primaryPhotoReference ? (
             <>
               <div className="absolute inset-0">
                 <ProviderImage
-                  photoReference={liveDetails.photos[0].photo_reference}
+                  photoReference={primaryPhotoReference}
                   alt={`${provider.name} cover`}
                   sizes="100vw"
                   priority
@@ -1132,6 +1094,15 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     Call Business
                   </button>
                 )}
+                <a
+                  href={directionsUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="pressable-soft inline-flex items-center justify-center gap-2 rounded-full border border-[#D6CCBD] bg-[#FFFDFC] px-6 py-3 text-center font-semibold text-[#344136] shadow-[0_14px_32px_-24px_rgba(61,90,69,0.35)] hover:bg-[#F7F0E7]"
+                >
+                  <MapPin className="h-4 w-4" />
+                  <span>Get Directions</span>
+                </a>
                 {websiteUrl && (
                   <a
                     href={websiteUrl}
@@ -1177,19 +1148,24 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   </p>
                 </div>
 
-                {livePhotos.length > 0 && (
-                  <div className="mt-6 grid grid-cols-2 gap-2">
-                    {livePhotos.slice(1, 5).map((photo: LivePhoto, i: number) => (
-                      <div key={i} className="relative h-24 overflow-hidden rounded-lg sm:h-28 md:h-24">
-                        <ProviderImage
-                          photoReference={photo.photo_reference}
-                          alt={`${provider.name} gallery ${i + 1}`}
-                          sizes="(max-width: 768px) 50vw, 144px"
-                        />
+                <div className="mt-6">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
+                    Gallery
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {lockedGallerySlots.map((slot) => (
+                      <div
+                        key={slot}
+                        className="relative flex h-24 items-center justify-center overflow-hidden rounded-lg border border-[#E5DBCF] bg-[linear-gradient(180deg,rgba(248,238,225,0.96)_0%,rgba(243,232,216,0.96)_100%)] sm:h-28 md:h-24"
+                      >
+                        <div className="absolute inset-3 rounded-lg bg-white/50 blur-md" />
+                        <div className="relative px-3 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7C7468]">
+                          🔒 Gallery available for premium members
+                        </div>
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
 
                 <div className="mt-6 rounded-[1.5rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4 text-sm leading-6 text-[#5D5A54]">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
@@ -1200,24 +1176,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   </p>
                 </div>
               </div>
-            ) : (
-              <div className="pawfinder-fade-up-delay-2 flex w-full flex-col justify-center rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 text-left shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
-                <Info className="mb-4 h-11 w-11 text-[#A39484]" />
-                <h3 className="font-display mb-2 text-xl font-bold text-[#344136]">Unverified Profile</h3>
-                <p className="mb-4 text-sm leading-6 text-[#6E6A63]">
-                  This business hasn&apos;t verified their profile or uploaded photos yet.
-                </p>
-                <div className="rounded-[1.35rem] border border-[#E4D4B0] bg-[#FFF7E7] p-4 text-sm leading-6 text-[#6A5121]">
-                  The trust summary above still helps pet owners understand the latest review signals while profile verification is pending.
-                </div>
-                <Link
-                  href={`/business/dashboard?claim=${encodeURIComponent(provider.google_place_id || provider.id)}`}
-                  className="mt-5 inline-flex text-sm font-semibold text-[#3D5A45] hover:underline"
-                >
-                  Are you the owner? Claim this listing
-                </Link>
-              </div>
-            )}
+            ) : null}
           </div>
 
           {isFeaturedProfile && liveReviews.length > 0 && (

@@ -100,9 +100,15 @@ function SearchContent() {
 
     return 'distance'
   }, [searchParams])
-  const [draftCategory, setDraftCategory] = useState(filters.category)
-  const [draftBreed, setDraftBreed] = useState(filters.breed)
-  const [draftLocation, setDraftLocation] = useState(selectedLocationLabel || filters.postcode)
+  const filtersFormKey = useMemo(
+    () =>
+      JSON.stringify({
+        location: selectedLocationLabel || filters.postcode,
+        category: filters.category,
+        breed: filters.breed,
+      }),
+    [filters.breed, filters.category, filters.postcode, selectedLocationLabel]
+  )
 
   const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
   const getErrorName = (error: unknown) => (error instanceof Error ? error.name : '')
@@ -226,13 +232,6 @@ function SearchContent() {
     }
   }, [fetchProviders, filters, selectedLat, selectedLng])
 
-  useEffect(() => {
-    setDraftCategory(filters.category)
-    setDraftBreed(filters.breed)
-    setDraftLocation(selectedLocationLabel || filters.postcode)
-    setLocationError(null)
-  }, [filters.breed, filters.category, filters.postcode, selectedLocationLabel])
-
   const updateSearchUrl = ({
     nextFilters = filters,
     nextSortBy = sortBy,
@@ -258,17 +257,6 @@ function SearchContent() {
 
     const nextQuery = nextParams.toString()
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
-  }
-
-  const handleFilterChange = (key: keyof typeof filters, value: string) => {
-    lastAutoFetchKeyRef.current = null
-    setVisibleCount(RESULTS_PAGE_SIZE)
-    updateSearchUrl({
-      nextFilters: {
-        ...filters,
-        [key]: value,
-      },
-    })
   }
 
   const resolveLocationDraft = useCallback(async (rawLocation: string) => {
@@ -348,24 +336,32 @@ function SearchContent() {
     }
   }, [])
 
-  const handleApplyFilters = useCallback(async () => {
+  const handleApplyFilters = useCallback(async ({
+    breed,
+    category,
+    location,
+  }: {
+    breed: string
+    category: string
+    location: string
+  }) => {
     setLocationError(null)
     setVisibleCount(RESULTS_PAGE_SIZE)
     lastAutoFetchKeyRef.current = null
     setIsApplyingFilters(true)
 
     try {
-      const resolvedLocation = await resolveLocationDraft(draftLocation)
+      const resolvedLocation = await resolveLocationDraft(location)
       const nextParams = new URLSearchParams(searchParams.toString())
 
-      if (draftCategory) {
-        nextParams.set('category', draftCategory)
+      if (category) {
+        nextParams.set('category', category)
       } else {
         nextParams.delete('category')
       }
 
-      if (draftBreed) {
-        nextParams.set('breed', draftBreed)
+      if (breed) {
+        nextParams.set('breed', breed)
       } else {
         nextParams.delete('breed')
       }
@@ -394,7 +390,7 @@ function SearchContent() {
     } finally {
       setIsApplyingFilters(false)
     }
-  }, [draftBreed, draftCategory, draftLocation, pathname, resolveLocationDraft, router, searchParams])
+  }, [pathname, resolveLocationDraft, router, searchParams])
 
   const handleSortChange = (value: SortOption) => {
     setVisibleCount(RESULTS_PAGE_SIZE)
@@ -548,16 +544,28 @@ function SearchContent() {
             <h2 className="text-base font-semibold text-stone-800">Filters</h2>
           </div>
           
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+          <form
+            key={filtersFormKey}
+            onSubmit={(event) => {
+              event.preventDefault()
+              const formData = new FormData(event.currentTarget)
+              void handleApplyFilters({
+                location: String(formData.get('location') || ''),
+                category: String(formData.get('category') || ''),
+                breed: String(formData.get('breed') || ''),
+              })
+            }}
+            className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end"
+          >
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">Location</label>
               <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 focus-within:border-[#829e8d] focus-within:bg-white focus-within:ring-1 focus-within:ring-[#829e8d]">
                 <MapPin className="h-4 w-4 flex-shrink-0 text-stone-400" />
                 <input
+                  name="location"
                   type="text"
-                  value={draftLocation}
-                  onChange={(e) => {
-                    setDraftLocation(e.target.value)
+                  defaultValue={selectedLocationLabel || filters.postcode}
+                  onChange={() => {
                     setLocationError(null)
                   }}
                   placeholder="City, town, or postcode"
@@ -568,9 +576,9 @@ function SearchContent() {
 
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">Category</label>
-              <select 
-                value={draftCategory}
-                onChange={(e) => setDraftCategory(e.target.value)}
+              <select
+                name="category"
+                defaultValue={filters.category}
                 className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
               >
                 <option value="">All Categories</option>
@@ -585,9 +593,9 @@ function SearchContent() {
 
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">Breed</label>
-              <select 
-                value={draftBreed}
-                onChange={(e) => setDraftBreed(e.target.value)}
+              <select
+                name="breed"
+                defaultValue={filters.breed}
                 className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
               >
                 <option value="">All Breeds</option>
@@ -616,10 +624,8 @@ function SearchContent() {
             </div>
 
             <div>
-              <button 
-                onClick={() => {
-                  void handleApplyFilters()
-                }}
+              <button
+                type="submit"
                 disabled={isApplyingFilters}
                 className="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400 md:w-auto md:min-w-[126px]"
               >
@@ -636,7 +642,7 @@ function SearchContent() {
             <p className="text-[11px] leading-relaxed text-stone-400 md:col-span-5 md:pt-1">
               Filter results are most accurate for verified providers. Unclaimed businesses are included by default.
             </p>
-          </div>
+          </form>
         </div>
       </aside>
 
@@ -726,9 +732,9 @@ function SearchContent() {
                   >
                     <div className={`rounded-2xl border p-4 shadow-sm transition-all group-hover:border-stone-200 group-hover:shadow-md sm:p-5 ${isFeaturedResult ? 'bg-[#fffdf8] border-[#e7d7a6]' : 'bg-white border-stone-100'}`}>
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
-                        <div className={`relative h-24 w-24 overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 sm:h-24 sm:w-24 sm:flex-shrink-0 ${!isFeaturedResult && provider.subscription_tier !== 'premium' ? 'blur-[2px]' : ''}`}>
+                    <div className="relative h-24 w-24 overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 sm:h-24 sm:w-24 sm:flex-shrink-0">
                           <ProviderImage
-                            photoReference={(isFeaturedResult || provider.subscription_tier === 'premium') ? provider.photo_reference : null}
+                        photoReference={provider.photo_reference}
                             alt={provider.name}
                             sizes="96px"
                             priority={isFeaturedResult}
