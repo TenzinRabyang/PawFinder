@@ -555,9 +555,9 @@ function SearchContent() {
                   >
                     <div className={`rounded-2xl border p-4 shadow-sm transition-all group-hover:border-stone-200 group-hover:shadow-md sm:p-5 ${isFeaturedResult ? 'bg-[#fffdf8] border-[#e7d7a6]' : 'bg-white border-stone-100'}`}>
                       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
-                        <div className={`relative h-24 w-24 overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 sm:h-24 sm:w-24 sm:flex-shrink-0 ${!isFeaturedResult && provider.subscription_tier !== 'premium' ? 'blur-[2px]' : ''}`}>
+                    <div className="relative h-24 w-24 overflow-hidden rounded-2xl border border-stone-100 bg-stone-50 sm:h-24 sm:w-24 sm:flex-shrink-0">
                           <ProviderImage
-                            photoReference={(isFeaturedResult || provider.subscription_tier === 'premium') ? provider.photo_reference : null}
+                        photoReference={provider.photo_reference}
                             alt={provider.name}
                             sizes="96px"
                             priority={isFeaturedResult}
