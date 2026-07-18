@@ -59,15 +59,18 @@ export default function InlineSearchFeedbackCard({
   }
 
   const handleResponse = async (rating: 'yes' | 'no') => {
-    if (cardState === 'saving') return
+    if (cardState === 'saving' || cardState === 'saving_details') return
 
+    const generatedId = crypto.randomUUID()
     setSelectedRating(rating)
+    setFeedbackId(generatedId)
     setCardState('saving')
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('user_feedback')
         .insert({
+          id: generatedId,
           feedback_type: 'search_relevance',
           rating,
           metadata: {
@@ -75,21 +78,20 @@ export default function InlineSearchFeedbackCard({
             results_count: resultsCount,
           },
         })
-        .select('id')
-        .single()
 
       if (error) {
         console.error('Failed to save inline search feedback', error)
+        setFeedbackId(null)
         setCardState('prompt')
         setSelectedRating(null)
         return
       }
 
       markSessionComplete()
-      setFeedbackId(data?.id ?? null)
       setCardState('collecting_details')
     } catch (error) {
       console.error('Failed to save inline search feedback', error)
+      setFeedbackId(null)
       setCardState('prompt')
       setSelectedRating(null)
     }

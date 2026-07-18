@@ -47,15 +47,18 @@ export default function ActionTriggerToast({
   }, [onClose, toastState])
 
   const handleResponse = async (rating: 'yes' | 'no') => {
-    if (!actionType || toastState === 'saving') return
+    if (!actionType || toastState === 'saving' || toastState === 'saving_details') return
 
+    const generatedId = crypto.randomUUID()
     setSelectedRating(rating)
+    setFeedbackId(generatedId)
     setToastState('saving')
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('user_feedback')
         .insert({
+          id: generatedId,
           feedback_type: 'action_trigger',
           rating,
           metadata: {
@@ -63,20 +66,21 @@ export default function ActionTriggerToast({
             action_type: actionType,
           },
         })
-        .select('id')
-        .single()
 
       if (error) {
         console.error('Failed to save action trigger feedback', error)
-        onClose()
+        setFeedbackId(null)
+        setSelectedRating(null)
+        setToastState('prompt')
         return
       }
 
-      setFeedbackId(data?.id ?? null)
       setToastState('collecting_details')
     } catch (error) {
       console.error('Failed to save action trigger feedback', error)
-      onClose()
+      setFeedbackId(null)
+      setSelectedRating(null)
+      setToastState('prompt')
     }
   }
 
