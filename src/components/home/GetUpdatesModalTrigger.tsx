@@ -67,7 +67,7 @@ export default function GetUpdatesModalTrigger() {
       <button
         type="button"
         onClick={handleOpen}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[#D9CDBB] bg-white/85 px-3 py-1.5 text-xs font-semibold text-[#20261F] shadow-[0_14px_28px_-22px_rgba(32,38,31,0.35)] backdrop-blur transition hover:-translate-y-0.5 hover:border-[#B14A2B] hover:text-[#B14A2B]"
+        className="inline-flex items-center gap-1.5 rounded-full border border-white/60 bg-white/92 px-3 py-1.5 text-xs font-semibold text-[#20261F] shadow-[0_18px_30px_-20px_rgba(32,38,31,0.55)] backdrop-blur transition hover:-translate-y-0.5 hover:border-[#B14A2B] hover:text-[#B14A2B]"
       >
         <span>Get Updates</span>
         <span aria-hidden="true">🔔</span>

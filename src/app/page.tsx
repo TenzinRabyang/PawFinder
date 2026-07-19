@@ -92,11 +92,11 @@ export default async function Home() {
 
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl">
-            <div className="mb-3 flex justify-end sm:mb-4">
-              <GetUpdatesModalTrigger />
-            </div>
             <div className="mb-7 sm:mb-10">
               <div className="relative mx-auto max-w-4xl">
+                <div className="absolute right-3 top-3 z-10 sm:right-4 sm:top-4">
+                  <GetUpdatesModalTrigger />
+                </div>
                 <div className="overflow-hidden rounded-[2rem] border border-[#DCD3BE] bg-[#F4EEE4] shadow-[0_28px_60px_-34px_rgba(32,38,31,0.4)]">
                   <EditorialPhoto
                     src="/home/hero.png"
