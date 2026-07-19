@@ -73,7 +73,7 @@ const FEEDBACK_ERROR_MESSAGE = "Couldn’t save feedback. Please try again.";
 const CHAT_ONE_LEFT_WARNING_MESSAGE =
   "⚠️ Note: You have 1 free AI search remaining today.";
 const CHAT_LIMIT_REACHED_MESSAGE =
-  "❌ Daily Limit Reached. You have used your 5 free AI matches for today to protect our beta server. Come back tomorrow or try again in an Incognito tab!";
+  "❌ Daily Limit Reached. You have used your 5 free AI matches for today to protect our beta server. Please come back tomorrow!";
 const FEEDBACK_REASONS: Array<{ label: string; value: FeedbackReason }> = [
   { label: "Wrong Info", value: "wrong_info" },
   { label: "Confusing", value: "confusing" },
