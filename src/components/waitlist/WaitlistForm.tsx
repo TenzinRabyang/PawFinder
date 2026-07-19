@@ -3,7 +3,7 @@
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
 
-type WaitlistUserType = "pet_owner" | "pet_sitter";
+type WaitlistUserType = "pet_owner" | "pet_business";
 
 type WaitlistFormProps = {
   compact?: boolean;
@@ -17,7 +17,7 @@ type WaitlistApiResponse = {
 
 const ROLE_OPTIONS: Array<{ label: string; value: WaitlistUserType }> = [
   { label: "I am a Pet Owner", value: "pet_owner" },
-  { label: "I am a Pet Sitter/Walker", value: "pet_sitter" },
+  { label: "I have Pet Business / Provider", value: "pet_business" },
 ];
 
 const EMAIL_PLACEHOLDER = "Enter your email";
@@ -56,7 +56,7 @@ export default function WaitlistForm({ compact = false, className = "" }: Waitli
       if (!response.ok) {
         const errorMessage =
           typeof payload.error === "string" ? payload.error : "Something went wrong. Please try again.";
-        const isDuplicate = errorMessage.includes("already on the list");
+        const isDuplicate = response.status === 409;
         setStatus(isDuplicate ? "duplicate" : "error");
         setMessage(errorMessage);
         return;
@@ -66,7 +66,7 @@ export default function WaitlistForm({ compact = false, className = "" }: Waitli
       setMessage(
         typeof payload.message === "string"
           ? payload.message
-          : "Awesome! You've joined the waitlist."
+          : "Awesome! You're signed up for launch alerts."
       );
       setEmail("");
     } catch {
@@ -86,17 +86,17 @@ export default function WaitlistForm({ compact = false, className = "" }: Waitli
           </span>
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-[#B14A2B]">
-              Waitlist
+              Get Updates
             </p>
             <h3
               className={`mt-1 font-display tracking-[-0.03em] text-[#20261F] ${
                 compact ? "text-[1.2rem] leading-6" : "text-[1.65rem] leading-8"
               }`}
             >
-              Get notified when more access opens up.
+              Be the first to know when new features launch.
             </h3>
             <p className={`mt-2 text-[#4A5147] ${compact ? "text-sm leading-6" : "text-base leading-7"}`}>
-              Join the queue and tell us whether you are looking for care or offering it.
+              Tell us whether you are looking for care or offering it, and we will send launch alerts your way.
             </p>
           </div>
         </div>
@@ -152,7 +152,7 @@ export default function WaitlistForm({ compact = false, className = "" }: Waitli
                 disabled={isSubmitting || email.trim().length === 0}
                 className="inline-flex h-12 items-center justify-center rounded-[1rem] bg-[#B14A2B] px-5 text-sm font-semibold text-[#FFF8F2] shadow-[0_20px_35px_-24px_rgba(177,74,43,0.75)] transition hover:bg-[#973D24] disabled:cursor-not-allowed disabled:bg-[#CFA393] disabled:shadow-none"
               >
-                {isSubmitting ? "Submitting..." : "Get Notified"}
+                {isSubmitting ? "Submitting..." : "Get Updates"}
               </button>
             </div>
           </div>
