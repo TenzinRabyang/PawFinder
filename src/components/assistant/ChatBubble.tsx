@@ -493,7 +493,10 @@ export default function ChatBubble() {
     }
   };
 
-  const submitMessage = async (rawDraft: string) => {
+  const submitMessage = async (
+    rawDraft: string,
+    locationContextOverride: LocationSearchContext | null = activeLocationContext
+  ) => {
     const trimmedDraft = rawDraft.trim();
 
     if (!trimmedDraft || isLoading) return;
@@ -538,7 +541,7 @@ export default function ChatBubble() {
 
     try {
       setIsLoading(true);
-      await sendConversation(nextMessages, activeLocationContext);
+      await sendConversation(nextMessages, locationContextOverride);
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -559,12 +562,12 @@ export default function ChatBubble() {
   };
 
   const handleSend = async () => {
-    await submitMessage(draft);
+    await submitMessage(draft, activeLocationContext);
   };
 
   const handlePromptShortcut = async (prompt: string) => {
     setDraft(prompt);
-    await submitMessage(prompt);
+    await submitMessage(prompt, activeLocationContext);
   };
 
   const handleOpenAssistant = () => {
