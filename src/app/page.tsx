@@ -11,6 +11,7 @@ import {
 import EditorialPhoto from "@/components/home/EditorialPhoto";
 import HomeSearchCard from "@/components/home/HomeSearchCard";
 import ScrollToSearchButton from "@/components/home/ScrollToSearchButton";
+import WaitlistForm from "@/components/waitlist/WaitlistForm";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +152,12 @@ export default async function Home() {
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="pb-14 sm:pb-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+          <WaitlistForm className="mx-auto max-w-4xl" />
         </div>
       </section>
 

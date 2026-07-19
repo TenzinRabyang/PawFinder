@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import LocationSearchControl, {
   type LocationSearchContext,
 } from "@/components/location/LocationSearchControl";
+import WaitlistForm from "@/components/waitlist/WaitlistForm";
 import { consumeDailyUsage, getDailyUsageState } from "@/lib/daily-client-limits";
 import { createClient } from "@/utils/supabase/client";
 
@@ -908,6 +909,11 @@ export default function ChatBubble() {
           <p className="mt-1 font-medium">
             {isWarning ? CHAT_ONE_LEFT_WARNING_MESSAGE : CHAT_LIMIT_REACHED_MESSAGE}
           </p>
+          {!isWarning ? (
+            <div className="mt-4">
+              <WaitlistForm compact />
+            </div>
+          ) : null}
         </div>
       </div>
     );
