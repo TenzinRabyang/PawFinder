@@ -92,7 +92,7 @@ export default async function Home() {
 
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-4xl">
-            <div className="mb-5 flex justify-end sm:mb-7">
+            <div className="mb-3 flex justify-end sm:mb-4">
               <GetUpdatesModalTrigger />
             </div>
             <div className="mb-7 sm:mb-10">
