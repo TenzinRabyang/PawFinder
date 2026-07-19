@@ -3,7 +3,7 @@
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
 
-type WaitlistUserType = "pet_owner" | "pet_sitter";
+type WaitlistUserType = "pet_owner" | "pet_business";
 
 type WaitlistFormProps = {
   compact?: boolean;
@@ -17,7 +17,7 @@ type WaitlistApiResponse = {
 
 const ROLE_OPTIONS: Array<{ label: string; value: WaitlistUserType }> = [
   { label: "I am a Pet Owner", value: "pet_owner" },
-  { label: "I am a Pet Sitter/Walker", value: "pet_sitter" },
+  { label: "I have Pet Business / Provider", value: "pet_business" },
 ];
 
 const EMAIL_PLACEHOLDER = "Enter your email";

@@ -11,8 +11,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 const DUPLICATE_MESSAGE = "You're already signed up for updates. We'll be in touch soon.";
 const SUCCESS_MESSAGE = "Awesome! You're signed up for launch alerts.";
 
-function isValidUserType(value: unknown): value is "pet_owner" | "pet_sitter" {
-  return value === "pet_owner" || value === "pet_sitter";
+function isValidUserType(value: unknown): value is "pet_owner" | "pet_business" {
+  return value === "pet_owner" || value === "pet_business";
 }
 
 function isDuplicateWaitlistError(error: { code?: string; message?: string } | null | undefined) {
