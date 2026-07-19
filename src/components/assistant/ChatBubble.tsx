@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink, PawPrint, SendHorizontal, Sparkles, Trash2, X } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import LocationSearchControl, {
@@ -51,15 +51,24 @@ const REQUEST_TIMEOUT_MS = 18000;
 const TIMEOUT_MESSAGE = "Connection timed out. Please check your signal and try again.";
 const DUPLICATE_MESSAGE_WARNING =
   "It looks like you've sent the same question! Please try rephrasing or asking something new.";
-const PROVIDER_LINK_REGEX = /\[([^\]]+)\]\(provider:([^)]+)\)/g;
+const PROVIDER_LINK_REGEX =
+  /\*\*\[([^\]]+)\]\(provider:([^)]+)\)\*\*|\[([^\]]+)\]\(provider:([^)]+)\)/g;
 const QUICK_STARTER_CHIPS = [
   "Vets in Sheffield",
   "Cattery nearby",
   "Dog walkers",
 ];
+const QUICK_PROMPT_CHIPS = [
+  { label: "🔍 Find groomers near me", prompt: "Find groomers near me" },
+  { label: "🐕 Top dog walkers", prompt: "Top dog walkers" },
+  { label: "⭐ Highest-rated boarders", prompt: "Highest-rated boarders" },
+];
 const CHAT_DAILY_LIMIT = 5;
 const CHAT_DAILY_LIMIT_STORAGE_KEY = "pawfinder_chat_count";
 const CHAT_DAILY_LIMIT_PLACEHOLDER = "Daily chat limit reached. See you tomorrow!";
+const AI_WELCOME_STORAGE_KEY = "hasSeenAIWelcome";
+const AI_WELCOME_MESSAGE =
+  "💬 Hi! Looking for local pet care? Try asking me: 'Find 5-star dog walkers near me' or 'Who is the closest groomer?'";
 const FEEDBACK_THANK_YOU_MESSAGE = "Thank you for your feedback! ❤️";
 const FEEDBACK_ERROR_MESSAGE = "Couldn’t save feedback. Please try again.";
 const FEEDBACK_REASONS: Array<{ label: string; value: FeedbackReason }> = [
@@ -91,8 +100,8 @@ function parseMessageSegments(content: string): MessageSegment[] {
 
   for (const match of content.matchAll(PROVIDER_LINK_REGEX)) {
     const matchedText = match[0];
-    const name = match[1];
-    const providerId = match[2];
+    const name = match[1] || match[3];
+    const providerId = match[2] || match[4];
     const matchIndex = match.index ?? -1;
 
     if (matchIndex > lastIndex) {
@@ -118,6 +127,65 @@ function parseMessageSegments(content: string): MessageSegment[] {
   }
 
   return segments.length > 0 ? segments : [{ type: "text", value: content }];
+}
+
+function renderInlineFormattedText(value: string, keyPrefix: string) {
+  const tokens = value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+
+  return tokens.map((token, index) => {
+    const tokenKey = `${keyPrefix}-${index}`;
+
+    if (token.startsWith("**") && token.endsWith("**") && token.length > 4) {
+      return (
+        <strong key={tokenKey} className="font-semibold text-[#20261F]">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    return <span key={tokenKey}>{token}</span>;
+  });
+}
+
+function renderTextSegmentBlock(value: string, keyPrefix: string) {
+  const blocks = value
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  return blocks.map((block, blockIndex) => {
+    const blockKey = `${keyPrefix}-block-${blockIndex}`;
+    const lines = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 1 && /^---+$/.test(lines[0])) {
+      return <hr key={blockKey} className="border-[#E2D6C5]" />;
+    }
+
+    if (lines.every((line) => /^[-*•]\s+/.test(line))) {
+      return (
+        <ul key={blockKey} className="space-y-2 pl-5 text-left">
+          {lines.map((line, lineIndex) => (
+            <li key={`${blockKey}-item-${lineIndex}`} className="marker:text-[#B14A2B]">
+              {renderInlineFormattedText(line.replace(/^[-*•]\s+/, ""), `${blockKey}-item-${lineIndex}`)}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    return (
+      <div key={blockKey} className="space-y-2">
+        {lines.map((line, lineIndex) => (
+          <p key={`${blockKey}-line-${lineIndex}`} className="whitespace-pre-wrap">
+            {renderInlineFormattedText(line, `${blockKey}-line-${lineIndex}`)}
+          </p>
+        ))}
+      </div>
+    );
+  });
 }
 
 function isValidChatMessageArray(value: unknown): value is ChatMessage[] {
@@ -220,6 +288,7 @@ function getLocationContextFromSearchParams(
 }
 
 export default function ChatBubble() {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [isOpen, setIsOpen] = useState(false);
@@ -233,6 +302,8 @@ export default function ChatBubble() {
   const [isChatLimitReached, setIsChatLimitReached] = useState(() =>
     getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
   );
+  const [showWelcomePreview, setShowWelcomePreview] = useState(false);
+  const [playBubbleNudge, setPlayBubbleNudge] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const urlLocationContext = useMemo(
@@ -280,6 +351,35 @@ export default function ChatBubble() {
       document.body.style.overflow = "";
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || pathname !== "/") return;
+
+    const hasSeenWelcome = window.localStorage.getItem(AI_WELCOME_STORAGE_KEY) === "true";
+
+    if (hasSeenWelcome) {
+      return;
+    }
+
+    const nudgeTimer = window.setTimeout(() => {
+      setPlayBubbleNudge(true);
+    }, 120);
+
+    const animationTimer = window.setTimeout(() => {
+      setPlayBubbleNudge(false);
+    }, 2320);
+
+    const previewTimer = window.setTimeout(() => {
+      setShowWelcomePreview(true);
+      window.localStorage.setItem(AI_WELCOME_STORAGE_KEY, "true");
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(nudgeTimer);
+      window.clearTimeout(animationTimer);
+      window.clearTimeout(previewTimer);
+    };
+  }, [pathname]);
 
   const activeLocationContext = (() => {
     if (urlLocationContext) {
@@ -462,9 +562,17 @@ export default function ChatBubble() {
     await submitMessage(draft);
   };
 
-  const handleQuickStarter = async (starter: string) => {
-    setDraft(starter);
-    await submitMessage(starter);
+  const handlePromptShortcut = async (prompt: string) => {
+    setDraft(prompt);
+    await submitMessage(prompt);
+  };
+
+  const handleOpenAssistant = () => {
+    setShowWelcomePreview(false);
+    setIsChatLimitReached(
+      getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
+    );
+    setIsOpen((currentValue) => !currentValue);
   };
 
   const handleResolvedLocation = async (nextLocationContext: LocationSearchContext) => {
@@ -712,9 +820,9 @@ export default function ChatBubble() {
             if (!segment.value.trim()) return null;
 
             return (
-              <p key={`${message.id}-text-${index}`} className="whitespace-pre-wrap">
-                {segment.value.trim()}
-              </p>
+              <div key={`${message.id}-text-${index}`} className="space-y-3">
+                {renderTextSegmentBlock(segment.value.trim(), `${message.id}-text-${index}`)}
+              </div>
             );
           }
 
@@ -837,7 +945,7 @@ export default function ChatBubble() {
                           key={starter}
                           type="button"
                           onClick={() => {
-                            void handleQuickStarter(starter);
+                            void handlePromptShortcut(starter);
                           }}
                           disabled={isLoading || isChatLimitReached}
                           className="rounded-full border border-[#DED3C5] bg-white px-3 py-2 text-xs font-semibold text-[#5B6258] transition hover:border-[#B14A2B] hover:text-[#B14A2B] disabled:cursor-not-allowed disabled:opacity-70"
@@ -942,7 +1050,23 @@ export default function ChatBubble() {
                     event.preventDefault();
                     void handleSend();
                   }}
+                  className="space-y-3"
                 >
+                  <div className="flex flex-wrap gap-2">
+                    {QUICK_PROMPT_CHIPS.map((chip) => (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => {
+                          void handlePromptShortcut(chip.prompt);
+                        }}
+                        disabled={isLoading || isChatLimitReached}
+                        className="rounded-full border border-[#E1D7C8] bg-[#FFFCF8] px-3 py-1.5 text-xs font-semibold text-[#5B6258] transition hover:border-[#B14A2B] hover:text-[#B14A2B] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
                   <div className="flex items-end gap-3">
                     <label htmlFor="pawfinder-assistant-input" className="sr-only">
                       Ask the PawFinder Assistant
@@ -979,24 +1103,21 @@ export default function ChatBubble() {
           </section>
         ) : null}
 
+        {!isOpen && showWelcomePreview ? (
+          <div className="relative max-w-[18rem] rounded-[1.2rem] border border-[#E4D7C6] bg-[#FFFDF9] px-4 py-3 text-left text-sm leading-5 text-[#394136] shadow-[0_20px_40px_-28px_rgba(32,38,31,0.4)]">
+            <div className="absolute -bottom-1.5 right-5 h-3 w-3 rotate-45 border-b border-r border-[#E4D7C6] bg-[#FFFDF9]" />
+            <p>{AI_WELCOME_MESSAGE}</p>
+          </div>
+        ) : null}
+
         <button
           type="button"
-          onClick={() =>
-            setIsOpen((currentValue) => {
-              const nextValue = !currentValue;
-
-              if (nextValue) {
-                setIsChatLimitReached(
-                  getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
-                );
-              }
-
-              return nextValue;
-            })
-          }
+          onClick={handleOpenAssistant}
           aria-expanded={isOpen}
           aria-controls="pawfinder-assistant-panel"
-          className="group relative inline-flex h-16 w-16 items-center justify-center rounded-full border border-[#D6C8B3] bg-[radial-gradient(circle_at_30%_30%,#F7E5DD_0%,#B14A2B_68%,#93391F_100%)] text-[#FFF8F2] shadow-[0_24px_44px_-24px_rgba(177,74,43,0.75)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_48px_-22px_rgba(177,74,43,0.8)]"
+          className={`group relative inline-flex h-16 w-16 items-center justify-center rounded-full border border-[#D6C8B3] bg-[radial-gradient(circle_at_30%_30%,#F7E5DD_0%,#B14A2B_68%,#93391F_100%)] text-[#FFF8F2] shadow-[0_24px_44px_-24px_rgba(177,74,43,0.75)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_28px_48px_-22px_rgba(177,74,43,0.8)] ${
+            playBubbleNudge ? "motion-safe:animate-pulse ring-4 ring-[#F7E5DD]/80 ring-offset-2 ring-offset-transparent" : ""
+          }`}
         >
           <span className="absolute inset-1 rounded-full border border-white/20" />
           <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-[#DCD3BE] bg-[#F7F1E5] text-[#6E7C5B] shadow-sm">
