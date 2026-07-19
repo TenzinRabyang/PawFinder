@@ -8,8 +8,8 @@ type WaitlistPayload = {
 };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
-const DUPLICATE_MESSAGE = "You're already on the list! We'll be in touch soon.";
-const SUCCESS_MESSAGE = "Awesome! You've joined the waitlist.";
+const DUPLICATE_MESSAGE = "You're already signed up for updates. We'll be in touch soon.";
+const SUCCESS_MESSAGE = "Awesome! You're signed up for launch alerts.";
 
 function isValidUserType(value: unknown): value is "pet_owner" | "pet_sitter" {
   return value === "pet_owner" || value === "pet_sitter";
