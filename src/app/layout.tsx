@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/react";
 import { Geist, Geist_Mono, Quicksand } from "next/font/google";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -38,6 +39,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[#FAF7F1] text-[#20261F]">
         <main className="flex-1">{children}</main>
+        <Analytics />
         <Suspense fallback={null}>
           <ChatBubble />
         </Suspense>
