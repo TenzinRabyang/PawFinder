@@ -65,12 +65,15 @@ const QUICK_PROMPT_CHIPS = [
 ];
 const CHAT_DAILY_LIMIT = 5;
 const CHAT_DAILY_LIMIT_STORAGE_KEY = "pawfinder_chat_count";
-const CHAT_DAILY_LIMIT_PLACEHOLDER = "Daily chat limit reached. See you tomorrow!";
 const AI_WELCOME_STORAGE_KEY = "hasSeenAIWelcome";
 const AI_WELCOME_MESSAGE =
   "💬 Hi! Looking for local pet care? Try asking me: 'Find 5-star dog walkers near me' or 'Who is the closest groomer?'";
 const FEEDBACK_THANK_YOU_MESSAGE = "Thank you for your feedback! ❤️";
 const FEEDBACK_ERROR_MESSAGE = "Couldn’t save feedback. Please try again.";
+const CHAT_ONE_LEFT_WARNING_MESSAGE =
+  "⚠️ Note: You have 1 free AI search remaining today.";
+const CHAT_LIMIT_REACHED_MESSAGE =
+  "❌ Daily Limit Reached. You have used your 5 free AI matches for today to protect our beta server. Come back tomorrow or try again in an Incognito tab!";
 const FEEDBACK_REASONS: Array<{ label: string; value: FeedbackReason }> = [
   { label: "Wrong Info", value: "wrong_info" },
   { label: "Confusing", value: "confusing" },
@@ -236,6 +239,10 @@ function getFeedbackPreview(content: string) {
   return content.replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
+function isChatLimitBlockMessage(message: string) {
+  return /daily limit|limit reached|free ai match|free ai search/i.test(message);
+}
+
 function isValidLocationContext(value: unknown): value is LocationSearchContext {
   if (!value || typeof value !== "object") return false;
 
@@ -301,6 +308,9 @@ export default function ChatBubble() {
   const [isCollectingLocation, setIsCollectingLocation] = useState(false);
   const [isChatLimitReached, setIsChatLimitReached] = useState(() =>
     getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
+  );
+  const [chatRemainingMessages, setChatRemainingMessages] = useState(() =>
+    getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).remaining
   );
   const [showWelcomePreview, setShowWelcomePreview] = useState(false);
   const [playBubbleNudge, setPlayBubbleNudge] = useState(false);
@@ -413,11 +423,20 @@ export default function ChatBubble() {
       : `Using area ${activeLocationContext.label}`;
   }, [activeLocationContext]);
   const hasConversation = messages.length > 0;
+  const showOneLeftWarning = chatRemainingMessages === 1 && !isChatLimitReached;
+
+  const syncChatUsageState = () => {
+    const nextUsage = getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT);
+    setIsChatLimitReached(nextUsage.isLimited);
+    setChatRemainingMessages(nextUsage.remaining);
+    return nextUsage;
+  };
 
   const consumeChatAllowance = () => {
     const nextUsage = consumeDailyUsage(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT);
     setIsChatLimitReached(nextUsage.isLimited);
-    return nextUsage.allowed;
+    setChatRemainingMessages(nextUsage.remaining);
+    return nextUsage;
   };
 
   const sendConversation = async (
@@ -518,7 +537,9 @@ export default function ChatBubble() {
       return;
     }
 
-    if (!consumeChatAllowance()) {
+    const nextUsage = consumeChatAllowance();
+
+    if (!nextUsage.allowed) {
       setDraft("");
       setIsOpen(true);
       return;
@@ -548,6 +569,11 @@ export default function ChatBubble() {
           ? error.message
           : "The assistant hit a temporary problem. Please try again in a moment.";
 
+      if (isChatLimitBlockMessage(errorMessage)) {
+        setIsChatLimitReached(true);
+        setChatRemainingMessages(0);
+      }
+
       setMessages((currentMessages) => [
         ...currentMessages,
         {
@@ -572,14 +598,14 @@ export default function ChatBubble() {
 
   const handleOpenAssistant = () => {
     setShowWelcomePreview(false);
-    setIsChatLimitReached(
-      getDailyUsageState(CHAT_DAILY_LIMIT_STORAGE_KEY, CHAT_DAILY_LIMIT).isLimited
-    );
+    syncChatUsageState();
     setIsOpen((currentValue) => !currentValue);
   };
 
   const handleResolvedLocation = async (nextLocationContext: LocationSearchContext) => {
-    if (!consumeChatAllowance()) {
+    const nextUsage = consumeChatAllowance();
+
+    if (!nextUsage.allowed) {
       return;
     }
 
@@ -615,6 +641,11 @@ export default function ChatBubble() {
           ? error.message
           : "The assistant hit a temporary problem. Please try again in a moment.";
 
+      if (isChatLimitBlockMessage(errorMessage)) {
+        setIsChatLimitReached(true);
+        setChatRemainingMessages(0);
+      }
+
       setMessages((currentMessages) => [
         ...currentMessages,
         {
@@ -635,6 +666,7 @@ export default function ChatBubble() {
     setIsCollectingLocation(false);
     setShowResetConfirm(false);
     window.localStorage.removeItem(CHAT_SESSION_STORAGE_KEY);
+    syncChatUsageState();
   };
 
   const setFeedbackState = (messageId: string, nextState: MessageFeedbackState) => {
@@ -858,6 +890,29 @@ export default function ChatBubble() {
     );
   };
 
+  const renderSystemAlert = (variant: "warning" | "error") => {
+    const isWarning = variant === "warning";
+
+    return (
+      <div className="flex justify-center">
+        <div
+          className={`w-full max-w-[92%] rounded-[1.2rem] border px-4 py-3 text-sm leading-6 shadow-[0_10px_24px_-20px_rgba(32,38,31,0.4)] ${
+            isWarning
+              ? "border-[#E7C978] bg-[#FFF5CC] text-[#7A5711]"
+              : "border-2 border-[#D88B7B] bg-[#FDE5E1] text-[#8B3324]"
+          }`}
+        >
+          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.2em] opacity-80">
+            System Message
+          </p>
+          <p className="mt-1 font-medium">
+            {isWarning ? CHAT_ONE_LEFT_WARNING_MESSAGE : CHAT_LIMIT_REACHED_MESSAGE}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="pointer-events-none fixed bottom-4 right-4 z-[80] flex items-end justify-end sm:bottom-6 sm:right-6">
       <div className="pointer-events-auto flex flex-col items-end gap-3">
@@ -961,11 +1016,6 @@ export default function ChatBubble() {
                         </button>
                       ))}
                     </div>
-                    {isChatLimitReached ? (
-                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#8C5B4D]">
-                        {CHAT_DAILY_LIMIT_PLACEHOLDER}
-                      </p>
-                    ) : null}
                   </div>
                 </div>
               ) : (
@@ -996,6 +1046,8 @@ export default function ChatBubble() {
                   })}
                 </div>
               )}
+              {showOneLeftWarning ? renderSystemAlert("warning") : null}
+              {isChatLimitReached ? renderSystemAlert("error") : null}
               {isLoading ? (
                 <div className="mt-3 flex justify-start">
                   <div
@@ -1029,23 +1081,17 @@ export default function ChatBubble() {
                   <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#8C5B4D]">
                     Add your postcode or city
                   </p>
-                  {isChatLimitReached ? (
-                    <p className="text-sm font-medium leading-6 text-[#7A3E2C]">
-                      {CHAT_DAILY_LIMIT_PLACEHOLDER}
-                    </p>
-                  ) : (
-                    <LocationSearchControl
-                      key={activeLocationContext?.label || "assistant-location-control"}
-                      id="assistant-location"
-                      label="Location for nearby matches"
-                      submitLabel="Use this location"
-                      variant="assistant"
-                      autoSubmitOnSelect
-                      disabled={isLoading}
-                      initialQuery={activeLocationContext?.label || ""}
-                      onResolved={handleResolvedLocation}
-                    />
-                  )}
+                  <LocationSearchControl
+                    key={activeLocationContext?.label || "assistant-location-control"}
+                    id="assistant-location"
+                    label="Location for nearby matches"
+                    submitLabel="Use this location"
+                    variant="assistant"
+                    autoSubmitOnSelect
+                    disabled={isLoading || isChatLimitReached}
+                    initialQuery={activeLocationContext?.label || ""}
+                    onResolved={handleResolvedLocation}
+                  />
                 </div>
               ) : (
                 <form
@@ -1081,11 +1127,7 @@ export default function ChatBubble() {
                         value={draft}
                         onChange={(event) => setDraft(event.target.value)}
                         maxLength={1000}
-                        placeholder={
-                          isChatLimitReached
-                            ? CHAT_DAILY_LIMIT_PLACEHOLDER
-                            : "Describe the care you need..."
-                        }
+                        placeholder="Describe the care you need..."
                         disabled={isLoading || isChatLimitReached}
                         className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
                       />
