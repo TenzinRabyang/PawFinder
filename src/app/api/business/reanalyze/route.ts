@@ -4,6 +4,7 @@ import { tagProviderWebsite, WebsiteFetchError } from '@/lib/provider-ai-tagging
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { getBreedAnalysisPersistence } from '@/lib/provider-analysis-state'
 import { getWebsiteAnalysisMessage, type WebsiteAnalysisStatus } from '@/lib/website-analysis-status'
+import { validateSameOriginRequest } from '@/lib/csrf'
 import {
   inferServicesFromBusinessName,
   removeCategoryDuplicateServices,
@@ -17,7 +18,12 @@ function isMissingInferredServicesColumnError(error: { code?: string; message?: 
   )
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const csrfError = validateSameOriginRequest(request)
+  if (csrfError) {
+    return NextResponse.json({ error: csrfError }, { status: 403 })
+  }
+
   const supabase = await createClient()
   const {
     data: { user },

@@ -3,6 +3,7 @@ import { tagProviderWebsite, WebsiteFetchError } from '@/lib/provider-ai-tagging
 import { resolveProviderCategory, resolvePersistableProviderCategory } from '@/lib/provider-category'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
+import { validateSameOriginRequest } from '@/lib/csrf'
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { inferAnimalsFromProviderPhotos } from '@/lib/provider-photo-inference'
 import {
@@ -161,6 +162,11 @@ function mergeUniqueValues(...values: Array<string[] | null | undefined>) {
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const csrfError = validateSameOriginRequest(request)
+    if (csrfError) {
+      return NextResponse.json({ error: csrfError }, { status: 403 })
+    }
+
     const { id } = await params
     const supabaseAdmin = createAdminClient()
     const supabase = await createClient()

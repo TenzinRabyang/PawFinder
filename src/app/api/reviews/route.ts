@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { generateProviderReviewSummary } from '@/lib/review-summary'
+import { validateSameOriginRequest } from '@/lib/csrf'
 
 export async function POST(request: Request) {
+  const csrfError = validateSameOriginRequest(request)
+  if (csrfError) {
+    return NextResponse.json({ error: csrfError }, { status: 403 })
+  }
+
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
