@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check } from 'lucide-react'
+import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check, Info } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
