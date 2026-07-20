@@ -12,6 +12,12 @@ export const TRUST_EVAL_OUTPUT_SCHEMA = z.object({
 
 export type TrustEvalOutput = z.infer<typeof TRUST_EVAL_OUTPUT_SCHEMA>;
 
+const DEFAULT_GRAY_AUDIT_REASON =
+  "There are not enough reliable review details available right now for PawFinder to make a confident quality assessment.";
+
+const DEFAULT_GRAY_SUMMARY =
+  "PawFinder could not complete a reliable trust analysis from the available review data, so this provider is shown with an insufficient-data assessment for now.";
+
 type AiProviderConfig = {
   provider: "deepseek" | "openai";
   apiKey: string;
@@ -89,6 +95,28 @@ function normalizeTopicPoints(points: string[]) {
     });
 }
 
+export function buildGrayTrustSnapshot({
+  auditReason = DEFAULT_GRAY_AUDIT_REASON,
+  overallSummary = DEFAULT_GRAY_SUMMARY,
+}: {
+  auditReason?: string;
+  overallSummary?: string;
+} = {}): TrustEvalOutput {
+  return {
+    trust_badge: "GRAY",
+    audit_reason: auditReason.trim(),
+    safety_flags: [],
+    highlights: [],
+    overall_summary: overallSummary.trim(),
+  };
+}
+
+export function sanitizeTrustReviewInputs(reviews: string[]) {
+  return reviews
+    .map((review) => (typeof review === "string" ? review.replace(/\s+/g, " ").trim() : ""))
+    .filter(Boolean);
+}
+
 export async function evaluateTrustReviews({
   reviews,
   evaluationDate = new Date().toISOString().slice(0, 10),
@@ -96,61 +124,127 @@ export async function evaluateTrustReviews({
   reviews: string[];
   evaluationDate?: string;
 }): Promise<TrustEvalOutput> {
-  const providerConfig = getAiProviderConfig();
+  const sanitizedReviews = sanitizeTrustReviewInputs(reviews);
 
-  const response = await fetch(providerConfig.apiUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${providerConfig.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: providerConfig.model,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: buildTrustEvaluationSystemPrompt(evaluationDate) },
-        {
-          role: "user",
-          content: JSON.stringify(
-            {
-              task: "Evaluate these reviews and assign a trust badge.",
-              evaluation_date: evaluationDate,
-              total_reviews: reviews.length,
-              reviews,
-            },
-            null,
-            2
-          ),
+  if (sanitizedReviews.length === 0) {
+    console.warn("[trust-eval:input] No usable review text remained after sanitization.");
+    return buildGrayTrustSnapshot({
+      auditReason:
+        "There are not enough usable written reviews for PawFinder to make a reliable quality assessment.",
+      overallSummary:
+        "The available review data is missing meaningful written feedback, so PawFinder cannot draw a reliable overall conclusion yet.",
+    });
+  }
+
+  try {
+    const providerConfig = getAiProviderConfig();
+
+    let response: Response;
+    try {
+      response = await fetch(providerConfig.apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${providerConfig.apiKey}`,
         },
-      ],
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
+        body: JSON.stringify({
+          model: providerConfig.model,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: buildTrustEvaluationSystemPrompt(evaluationDate) },
+            {
+              role: "user",
+              content: JSON.stringify(
+                {
+                  task: "Evaluate these reviews and assign a trust badge.",
+                  evaluation_date: evaluationDate,
+                  total_reviews: sanitizedReviews.length,
+                  reviews: sanitizedReviews,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (error) {
+      console.error("[trust-eval:ai-request] Failed to reach trust evaluation model.", {
+        error: error instanceof Error ? error.message : String(error),
+        review_count: sanitizedReviews.length,
+      });
+      return buildGrayTrustSnapshot();
+    }
 
-  const rawBody = await response.text();
-  if (!response.ok) {
-    throw new Error(
-      `${providerConfig.provider} trust evaluation failed (${response.status}) using model ${providerConfig.model}: ${rawBody}`
-    );
+    const rawBody = await response.text();
+    if (!response.ok) {
+      console.error("[trust-eval:ai-response] Trust evaluation model returned a non-OK status.", {
+        status: response.status,
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        body_preview: rawBody.slice(0, 500),
+      });
+      return buildGrayTrustSnapshot();
+    }
+
+    let parsedBody: {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    try {
+      parsedBody = JSON.parse(rawBody) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+    } catch (error) {
+      console.error("[trust-eval:response-parse] Failed to parse raw AI response JSON.", {
+        error: error instanceof Error ? error.message : String(error),
+        body_preview: rawBody.slice(0, 500),
+      });
+      return buildGrayTrustSnapshot();
+    }
+
+    const content = parsedBody.choices?.[0]?.message?.content;
+
+    if (!content?.trim()) {
+      console.error("[trust-eval:response-content] AI trust evaluation returned no usable message content.", {
+        body_preview: rawBody.slice(0, 500),
+      });
+      return buildGrayTrustSnapshot();
+    }
+
+    let structuredContent: unknown;
+    try {
+      structuredContent = JSON.parse(content);
+    } catch (error) {
+      console.error("[trust-eval:content-parse] Failed to parse AI message content as JSON.", {
+        error: error instanceof Error ? error.message : String(error),
+        content_preview: content.slice(0, 500),
+      });
+      return buildGrayTrustSnapshot();
+    }
+
+    const validated = TRUST_EVAL_OUTPUT_SCHEMA.safeParse(structuredContent);
+    if (!validated.success) {
+      console.error("[trust-eval:zod] AI trust output failed schema validation.", {
+        issues: validated.error.issues,
+        content_preview: content.slice(0, 500),
+      });
+      return buildGrayTrustSnapshot();
+    }
+
+    return {
+      ...validated.data,
+      audit_reason: validated.data.audit_reason.trim(),
+      safety_flags: normalizeTopicPoints(validated.data.safety_flags),
+      highlights: normalizeTopicPoints(validated.data.highlights),
+      overall_summary: validated.data.overall_summary.trim(),
+    };
+  } catch (error) {
+    console.error("[trust-eval:unexpected] Unexpected trust evaluation failure.", {
+      error: error instanceof Error ? error.message : String(error),
+      review_count: sanitizedReviews.length,
+    });
+    return buildGrayTrustSnapshot();
   }
-
-  const parsedBody = JSON.parse(rawBody) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = parsedBody.choices?.[0]?.message?.content;
-
-  if (!content) {
-    throw new Error("AI trust evaluation returned no message content.");
-  }
-
-  const validated = TRUST_EVAL_OUTPUT_SCHEMA.parse(JSON.parse(content));
-
-  return {
-    ...validated,
-    audit_reason: validated.audit_reason.trim(),
-    safety_flags: normalizeTopicPoints(validated.safety_flags),
-    highlights: normalizeTopicPoints(validated.highlights),
-    overall_summary: validated.overall_summary.trim(),
-  };
 }
