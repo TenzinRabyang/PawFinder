@@ -10,7 +10,10 @@ import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
   type ProviderContactActionType,
 } from '@/components/provider/ActionTriggerToast'
-import TrustBadge, { type TrustBadgeValue } from '@/components/ui/TrustBadge'
+import {
+  ProviderTrustSummaryCard,
+  type TrustBadgeValue,
+} from '@/components/ui/TrustBadge'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   type BreedAnalysisStatus,
@@ -55,6 +58,11 @@ type ProviderProfileRecord = {
   is_verified?: boolean | null
   review_summary?: string | null
   photo_reference?: string | null
+  google_rating?: {
+    score?: number | null
+    count?: number | null
+    source?: string
+  } | null
   trust_badge?: TrustBadgeValue | null
   audit_reason?: string | null
   safety_flags?: string[] | null
@@ -121,7 +129,6 @@ type TrustSnapshotPayload = {
   highlights: string[]
   ai_version?: number | null
   refreshed?: boolean
-  loading?: boolean
   error?: string
 }
 
@@ -489,14 +496,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         dbProvider = (providerByPlaceId as ProviderProfileRecord | null) || null
       }
 
-      console.log('[Trust Engine] Provider DB Row fetched:', dbProvider ? {
-        id: dbProvider.id,
-        google_place_id: dbProvider.google_place_id,
-        trust_badge: dbProvider.trust_badge ?? null,
-        audit_reason: dbProvider.audit_reason ?? null,
-        ai_version: dbProvider.ai_version ?? null,
-      } : null)
-
       const canonicalPlaceId = dbProvider?.google_place_id || id
       const canFetchLiveDetails = Boolean(
         (dbProvider?.google_place_id && looksLikeGooglePlaceId(dbProvider.google_place_id)) ||
@@ -529,7 +528,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       const shouldHydrateLiveDetails =
         !canonicalCachedLiveDetails ||
         !hasItems(canonicalCachedLiveDetails.photos) ||
-        !hasItems(canonicalCachedLiveDetails.reviews)
+        !hasItems(canonicalCachedLiveDetails.reviews) ||
+        typeof canonicalCachedLiveDetails.rating !== 'number' ||
+        typeof canonicalCachedLiveDetails.user_ratings_total !== 'number'
 
       if (shouldHydrateLiveDetails && canFetchLiveDetails) {
         const detailsUrl = `/api/providers/${encodeURIComponent(canonicalPlaceId)}/live-details?include_ai_summary=1`
@@ -696,26 +697,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       })
 
       const savedTrustSnapshot = getSavedTrustSnapshot(resolvedProvider)
-      console.log('[Trust Engine] AI Version check result:', {
-        provider_id: resolvedProvider.id,
-        google_place_id: resolvedProvider.google_place_id,
-        ai_version: resolvedProvider.ai_version ?? null,
-        has_saved_snapshot: Boolean(savedTrustSnapshot),
-        trust_badge: resolvedProvider.trust_badge ?? null,
-      })
       if (savedTrustSnapshot) {
         setTrustSnapshot(savedTrustSnapshot)
       } else {
-        setTrustSnapshot({
-          trust_badge: 'GRAY',
-          audit_reason: 'Analyzing trust signals from available reviews...',
-          safety_flags: [],
-          highlights: [],
-          ai_version: resolvedProvider.ai_version ?? null,
-          refreshed: false,
-          loading: true,
-        })
-
         try {
           const trustRes = await fetch(
             `/api/providers/${encodeURIComponent(dbProvider?.id || id)}/trust-snapshot?place_id=${encodeURIComponent(
@@ -726,7 +710,6 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
 
           if (trustRes.ok && trustRes.headers.get('content-type')?.includes('application/json')) {
             const trustPayload = (await trustRes.json()) as TrustSnapshotPayload
-            console.log('[Trust Engine] API Refresh status code and payload:', trustRes.status, trustPayload)
             if (!trustPayload.error) {
               setTrustSnapshot({
                 trust_badge: trustPayload.trust_badge,
@@ -735,38 +718,11 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 highlights: Array.isArray(trustPayload.highlights) ? trustPayload.highlights : [],
                 ai_version: trustPayload.ai_version ?? null,
                 refreshed: Boolean(trustPayload.refreshed),
-                loading: false,
               })
             }
-          } else {
-            const errorPayload = (await trustRes.json().catch(() => ({}))) as { error?: string }
-            console.log('[Trust Engine] API Refresh status code and payload:', trustRes.status, errorPayload)
-            setTrustSnapshot({
-              trust_badge: 'GRAY',
-              audit_reason:
-                typeof errorPayload.error === 'string'
-                  ? errorPayload.error
-                  : 'Trust analysis is temporarily unavailable.',
-              safety_flags: [],
-              highlights: [],
-              ai_version: resolvedProvider.ai_version ?? null,
-              refreshed: false,
-              loading: false,
-              error: typeof errorPayload.error === 'string' ? errorPayload.error : undefined,
-            })
           }
         } catch {
           console.error('Failed to load provider trust snapshot')
-          setTrustSnapshot({
-            trust_badge: 'GRAY',
-            audit_reason: 'Trust analysis is temporarily unavailable.',
-            safety_flags: [],
-            highlights: [],
-            ai_version: resolvedProvider.ai_version ?? null,
-            refreshed: false,
-            loading: false,
-            error: 'Trust analysis is temporarily unavailable.',
-          })
         }
       }
     } catch {
@@ -927,6 +883,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     (typeof provider.photo_reference === 'string' && provider.photo_reference) ||
     livePhotos[0]?.photo_reference ||
     null
+  const headerGoogleRating =
+    typeof liveDetails?.rating === 'number'
+      ? liveDetails.rating
+      : typeof provider.google_rating?.score === 'number'
+        ? provider.google_rating.score
+        : null
+  const headerGoogleReviewCount =
+    typeof liveDetails?.user_ratings_total === 'number'
+      ? liveDetails.user_ratings_total
+      : typeof provider.google_rating?.count === 'number'
+        ? provider.google_rating.count
+        : null
   const liveReviews = liveDetails?.reviews ?? []
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
@@ -997,50 +965,18 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   {provider.name}
                 </h1>
 
-                {trustSnapshot ? (
-                  <div className="mt-5">
-                    <TrustBadge trustBadge={trustSnapshot.trust_badge} />
-                    {trustSnapshot.loading ? (
-                      <p className="mt-2 text-sm text-[#6C6F68]">Analyzing trust signals from available reviews...</p>
-                    ) : null}
-                  </div>
-                ) : null}
+                <div className="mt-5">
+                  <ProviderTrustSummaryCard
+                    trustBadge={trustSnapshot?.trust_badge}
+                    googleRating={headerGoogleRating}
+                    googleReviewCount={headerGoogleReviewCount}
+                  />
+                </div>
               </div>
 
-              <div className="pawfinder-fade-up-delay-1 mt-7 rounded-[1.75rem] border border-[#E4D4B0] bg-[linear-gradient(180deg,#FFF7E8_0%,#FFFDF8_100%)] p-5 shadow-[0_16px_38px_-30px_rgba(123,90,29,0.45)] sm:p-6">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="collar-tag collar-tag-large">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-sm font-black text-[#6A5121] shadow-sm">
-                      G
-                    </span>
-                    <div className="leading-tight">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8E6A20]/75">
-                        Google Rating
-                      </div>
-                      <div className="mt-1 flex items-baseline gap-2">
-                        <span className="text-2xl font-black sm:text-[2rem]">
-                          {liveDetails?.rating ? `${liveDetails.rating}` : 'N/A'}
-                        </span>
-                        <span className="text-sm font-semibold text-[#8E6A20]/80">/ 5</span>
-                      </div>
-                      <div className="mt-2">
-                        {renderFilledStars(liveDetails?.rating, {
-                          sizeClassName: 'h-4 w-4',
-                          filledClassName: 'fill-amber-400 text-amber-400',
-                          emptyClassName: 'text-[#D9C8A6]',
-                        })}
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
-                      {typeof liveDetails?.user_ratings_total === 'number'
-                        ? `${liveDetails.user_ratings_total} reviews`
-                        : 'Live'}
-                    </span>
-                  </div>
-                </div>
-
+              <div className="pawfinder-fade-up-delay-1 mt-6">
                 {visibleAiSummary ? (
-                  <div className="mt-5 rounded-[1.5rem] border border-[#E4D6C0] bg-[#FFFDF8] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+                  <div className="rounded-[1.5rem] border border-[#E4D6C0] bg-[#FFFDF8] p-5 shadow-[0_16px_36px_-30px_rgba(88,69,32,0.24)]">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
                       <div className="inline-flex items-center rounded-full bg-[#F3E3B7] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-[#7A5A19]">
                         User Review Summary
@@ -1062,7 +998,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     </p>
                   </div>
                 ) : (
-                  <div className="mt-5 rounded-[1.5rem] border border-dashed border-[#DDCEB2] bg-[#FFFBF2] p-4 text-sm text-[#6E6A63]">
+                  <div className="rounded-[1.5rem] border border-dashed border-[#DDCEB2] bg-[#FFFBF2] p-4 text-sm text-[#6E6A63]">
                     We are still gathering enough review detail to show a short trust summary for this business.
                   </div>
                 )}
