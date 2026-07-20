@@ -10,8 +10,9 @@ const OUTPUT_SCHEMA = z.object({
   audit_reason: z.string().describe("Short explanation for the badge assignment"),
   safety_flags: z
     .array(z.string())
+    .default([])
     .describe("Direct quote substrings of any Level 2 or Level 3 safety/service issues found"),
-  highlights: z.array(z.string()).describe("Key positive takeaways from the reviews"),
+  highlights: z.array(z.string()).default([]).describe("Key positive takeaways from the reviews"),
 });
 
 const REVIEW_SCHEMA = z.object({
@@ -74,6 +75,7 @@ function buildSystemPrompt() {
     'RULE 4 (Isolated Incident & Response): If only 1 minor or moderate complaint exists among 10+ positive reviews, or if the provider gave a reasonable response such as a traffic delay, the badge should be "GREEN" or "YELLOW" and the issue should be treated as isolated.',
     "RULE 5 (Recency Decay): Complaints older than 2 years carry minimal weight unless they are Level 3 critical issues.",
     "RULE 6 (Anti-Hallucination): Every entry in safety_flags MUST be an exact substring copied from the raw review text. If there is no qualifying issue, return an empty array.",
+    "CRITICAL FORMATTING RULE: You MUST return a valid JSON object containing ALL 4 keys: 'trust_badge', 'audit_reason', 'safety_flags', and 'highlights'. If there are no safety flags or highlights, you MUST return an empty array [] for those fields. Never omit a key.",
     "",
     'Use the evaluation date "' + EVALUATION_DATE + '" when applying recency decay.',
     "Keep audit_reason concise and deterministic.",
