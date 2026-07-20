@@ -5,9 +5,12 @@ import {
   resolvePlaceDetailsWithAutoHeal,
 } from "@/lib/provider-place-id-recovery";
 import {
+  buildBaselineTrustSnapshot,
   buildGrayTrustSnapshot,
   buildUnavailableTrustSnapshot,
+  calculateBaselineTrustBadge,
   CURRENT_AI_VERSION,
+  type DeterministicBaselineBadge,
   evaluateTrustReviews,
   sanitizeTrustReviewInputs,
   type TrustEvalOutput,
@@ -108,6 +111,7 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
   if (!placeId) {
     return {
       reviewTexts: [],
+      rating: null,
       userRatingsTotal: null,
     };
   }
@@ -116,7 +120,7 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
     const supabaseAdmin = createAdminClient();
     const resolvedDetails = await resolvePlaceDetailsWithAutoHeal({
       requestedPlaceId: placeId,
-      fields: "place_id,name,reviews,user_ratings_total",
+      fields: "place_id,name,reviews,rating,user_ratings_total",
       googleApiKey,
       provider: await getProviderForPlaceIdRecovery(supabaseAdmin, placeId).then(({ data }) => data),
       supabase: supabaseAdmin,
@@ -132,6 +136,7 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
       });
       return {
         reviewTexts: [],
+        rating: null,
         userRatingsTotal: null,
       };
     }
@@ -139,6 +144,10 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
     const rawReviews = Array.isArray(resolvedDetails.result?.reviews)
       ? (resolvedDetails.result?.reviews as Array<Record<string, unknown>>)
       : [];
+    const rating =
+      typeof resolvedDetails.result?.rating === "number"
+        ? resolvedDetails.result.rating
+        : null;
     const userRatingsTotal =
       typeof resolvedDetails.result?.user_ratings_total === "number"
         ? resolvedDetails.result.user_ratings_total
@@ -170,6 +179,7 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
     console.info("[trust-snapshot:google-map] Sanitized Google reviews for trust evaluation.", {
       provider_id: provider.id,
       place_id: placeId,
+      rating,
       user_ratings_total: userRatingsTotal,
       raw_count: rawReviews.length,
       mapped_count: mappedReviews.length,
@@ -178,6 +188,7 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
 
     return {
       reviewTexts: sanitizedReviews,
+      rating,
       userRatingsTotal,
     };
   } catch (error) {
@@ -188,6 +199,7 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
     });
     return {
       reviewTexts: [],
+      rating: null,
       userRatingsTotal: null,
     };
   }
@@ -364,20 +376,31 @@ export async function GET(
           )
         : {
             reviewTexts: [],
+            rating: null,
             userRatingsTotal: null,
           };
     const googleReviewTexts = googleReviewContext.reviewTexts;
     const nativeReviewTexts = provider ? await fetchNativeReviewTexts(provider.id) : [];
     const reviewTexts = sanitizeTrustReviewInputs([...googleReviewTexts, ...nativeReviewTexts]);
+    const googleRating =
+      typeof googleReviewContext.rating === "number" && Number.isFinite(googleReviewContext.rating)
+        ? googleReviewContext.rating
+        : null;
     const userRatingsTotal =
       typeof googleReviewContext.userRatingsTotal === "number"
         ? googleReviewContext.userRatingsTotal
         : reviewTexts.length;
+    const baselineBadge = calculateBaselineTrustBadge({
+      rating: googleRating,
+      userRatingsTotal,
+    });
 
     console.info("[trust-snapshot:reviews] Prepared review inputs for trust evaluation.", {
       provider_id: provider?.id ?? null,
       resolved_place_id: resolvedPlaceId,
+      rating: googleRating,
       user_ratings_total: userRatingsTotal,
+      baseline_badge: baselineBadge,
       google_count: googleReviewTexts.length,
       native_count: nativeReviewTexts.length,
       combined_count: reviewTexts.length,
@@ -393,11 +416,21 @@ export async function GET(
       );
     }
 
-    if (reviewTexts.length === 0) {
+    if (!baselineBadge) {
+      return buildSnapshotResponse(
+        buildRouteFallbackSnapshot("Quality assessment temporarily unavailable."),
+        {
+          aiVersion: provider ? CURRENT_AI_VERSION : null,
+          refreshed: Boolean(provider),
+        }
+      );
+    }
+
+    if (baselineBadge === "GRAY") {
       const emptySnapshot = buildGrayTrustSnapshot({
-        auditReason: "There are not enough saved reviews yet for PawFinder to make a reliable quality assessment.",
+        auditReason: "This provider has fewer than 5 total Google reviews, so PawFinder cannot make a reliable quality assessment yet.",
         overallSummary:
-          "There are fewer than 5 usable written reviews available, so PawFinder cannot draw a reliable overall conclusion yet.",
+          "There are fewer than 5 total Google reviews available, so PawFinder cannot draw a dependable trust conclusion for this provider yet.",
       });
 
       if (provider) {
@@ -440,11 +473,55 @@ export async function GET(
       });
     }
 
+    if (reviewTexts.length === 0 && googleRating !== null) {
+      const baselineSnapshot = buildBaselineTrustSnapshot({
+        baselineBadge,
+        rating: googleRating,
+        userRatingsTotal,
+        hasSampleReviews: false,
+      });
+
+      if (provider) {
+        try {
+          const { error: updateError } = await supabaseAdmin
+            .from("pf_providers")
+            .update({
+              trust_badge: baselineSnapshot.trust_badge,
+              audit_reason: baselineSnapshot.audit_reason,
+              safety_flags: baselineSnapshot.safety_flags,
+              highlights: baselineSnapshot.highlights,
+              overall_summary: baselineSnapshot.overall_summary,
+              ai_version: CURRENT_AI_VERSION,
+            })
+            .eq("id", provider.id);
+
+          if (updateError) {
+            console.error("[trust-snapshot:db-upsert] Failed to persist baseline-only trust snapshot.", {
+              provider_id: provider.id,
+              error: updateError.message,
+            });
+          }
+        } catch (error) {
+          console.error("[trust-snapshot:db-upsert] Unexpected failure while persisting baseline-only trust snapshot.", {
+            provider_id: provider.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      return buildSnapshotResponse(baselineSnapshot, {
+        aiVersion: provider ? CURRENT_AI_VERSION : null,
+        refreshed: Boolean(provider),
+      });
+    }
+
     let evaluated: TrustEvalOutput;
     try {
       evaluated = await evaluateTrustReviews({
         reviews: reviewTexts,
+        rating: googleRating!,
         userRatingsTotal,
+        baselineBadge: baselineBadge as Exclude<DeterministicBaselineBadge, "GRAY">,
       });
     } catch (error) {
       console.error("[trust-snapshot:ai-eval] Unexpected failure bubbled out of trust evaluation.", {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CURRENT_AI_VERSION = 4;
+export const CURRENT_AI_VERSION = 5;
 const AUDIT_REASON_SCHEMA_MAX = 360;
 const AUDIT_REASON_FINAL_MAX = 280;
 const OVERALL_SUMMARY_FINAL_MAX = 420;
@@ -14,6 +14,7 @@ export const TRUST_EVAL_OUTPUT_SCHEMA = z.object({
 });
 
 export type TrustEvalOutput = z.infer<typeof TRUST_EVAL_OUTPUT_SCHEMA>;
+export type DeterministicBaselineBadge = "GREEN" | "YELLOW" | "RED" | "GRAY";
 
 const DEFAULT_GRAY_AUDIT_REASON =
   "There are not enough reliable review details available right now for PawFinder to make a confident quality assessment.";
@@ -60,36 +61,182 @@ function getAiProviderConfig(): AiProviderConfig {
 }
 
 export function buildTrustEvaluationSystemPrompt(evaluationDate: string, userRatingsTotal: number) {
+  throw new Error("Use buildHybridTrustEvaluationSystemPrompt instead.");
+}
+
+function coerceHybridBadge({
+  baselineBadge,
+  candidateBadge,
+}: {
+  baselineBadge: Exclude<DeterministicBaselineBadge, "GRAY">;
+  candidateBadge: TrustEvalOutput["trust_badge"];
+}): Exclude<TrustEvalOutput["trust_badge"], "GRAY" | "UNAVAILABLE"> {
+  if (candidateBadge === "UNAVAILABLE" || candidateBadge === "GRAY") {
+    return baselineBadge;
+  }
+
+  if (baselineBadge === "GREEN") {
+    return candidateBadge;
+  }
+
+  if (baselineBadge === "YELLOW") {
+    return candidateBadge === "RED" ? "RED" : "YELLOW";
+  }
+
+  return "RED";
+}
+
+export function calculateBaselineTrustBadge({
+  rating,
+  userRatingsTotal,
+}: {
+  rating: number | null;
+  userRatingsTotal: number;
+}): DeterministicBaselineBadge | null {
+  if (userRatingsTotal < 5) {
+    return "GRAY";
+  }
+
+  if (typeof rating !== "number" || !Number.isFinite(rating)) {
+    return null;
+  }
+
+  if (rating >= 4.5 && userRatingsTotal >= 15) {
+    return "GREEN";
+  }
+
+  if (rating < 3.8) {
+    return "RED";
+  }
+
+  return "YELLOW";
+}
+
+export function buildBaselineTrustSnapshot({
+  baselineBadge,
+  rating,
+  userRatingsTotal,
+  hasSampleReviews,
+}: {
+  baselineBadge: DeterministicBaselineBadge;
+  rating: number | null;
+  userRatingsTotal: number;
+  hasSampleReviews: boolean;
+}): TrustEvalOutput {
+  if (baselineBadge === "GRAY") {
+    return buildGrayTrustSnapshot({
+      auditReason:
+        "There are fewer than 5 total Google reviews, so PawFinder does not have enough evidence for a reliable quality assessment yet.",
+      overallSummary:
+        "This provider has too little review volume for PawFinder to draw a dependable trust conclusion right now.",
+    });
+  }
+
+  const formattedRating =
+    typeof rating === "number" && Number.isFinite(rating) ? rating.toFixed(1) : "an unavailable";
+  const sampleSuffix = hasSampleReviews
+    ? "PawFinder did not find any critical safety signals in the sampled review text."
+    : "A detailed review text sample was not available for additional AI safety analysis.";
+
+  if (baselineBadge === "GREEN") {
+    return {
+      trust_badge: "GREEN",
+      audit_reason: truncateAtWordBoundary(
+        `This provider has a strong baseline rating of ${formattedRating} stars across ${userRatingsTotal} Google reviews. ${sampleSuffix}`,
+        AUDIT_REASON_FINAL_MAX
+      ),
+      safety_flags: [],
+      highlights: [
+        `Strong aggregate rating across ${userRatingsTotal} Google reviews`,
+        hasSampleReviews ? "No critical safety hazards detected in sampled reviews" : "Baseline badge derived from aggregate review metrics",
+      ],
+      overall_summary: truncateAtWordBoundary(
+        `The provider has a strong aggregate rating of ${formattedRating} stars across ${userRatingsTotal} Google reviews, which supports a positive baseline trust assessment. ${sampleSuffix}`,
+        OVERALL_SUMMARY_FINAL_MAX
+      ),
+    };
+  }
+
+  if (baselineBadge === "RED") {
+    return {
+      trust_badge: "RED",
+      audit_reason: truncateAtWordBoundary(
+        `This provider's aggregate Google rating is ${formattedRating} stars across ${userRatingsTotal} reviews, which sets a weak baseline trust score. ${sampleSuffix}`,
+        AUDIT_REASON_FINAL_MAX
+      ),
+      safety_flags: [
+        `Low aggregate rating across ${userRatingsTotal} Google reviews`,
+      ],
+      highlights: [],
+      overall_summary: truncateAtWordBoundary(
+        `The provider's aggregate rating of ${formattedRating} stars across ${userRatingsTotal} Google reviews creates a weak baseline trust assessment. ${sampleSuffix}`,
+        OVERALL_SUMMARY_FINAL_MAX
+      ),
+    };
+  }
+
+  return {
+    trust_badge: "YELLOW",
+    audit_reason: truncateAtWordBoundary(
+      `This provider has a mixed aggregate baseline of ${formattedRating} stars across ${userRatingsTotal} Google reviews. ${sampleSuffix}`,
+      AUDIT_REASON_FINAL_MAX
+    ),
+    safety_flags: [],
+    highlights: [
+      `Mixed aggregate rating across ${userRatingsTotal} Google reviews`,
+      hasSampleReviews ? "Sample review text checked for serious safety issues" : "Baseline badge derived from aggregate review metrics",
+    ],
+    overall_summary: truncateAtWordBoundary(
+      `The provider's aggregate rating of ${formattedRating} stars across ${userRatingsTotal} Google reviews supports a cautionary baseline assessment. ${sampleSuffix}`,
+      OVERALL_SUMMARY_FINAL_MAX
+    ),
+  };
+}
+
+export function buildHybridTrustEvaluationSystemPrompt({
+  evaluationDate,
+  rating,
+  userRatingsTotal,
+  baselineBadge,
+}: {
+  evaluationDate: string;
+  rating: number;
+  userRatingsTotal: number;
+  baselineBadge: Exclude<DeterministicBaselineBadge, "GRAY">;
+}) {
   return [
-    "You are PawFinder's deterministic Trust & Safety evaluation engine.",
+    "You are PawFinder's deterministic Trust & Safety override engine.",
     "You must classify review sets using only the supplied review data and return JSON only.",
     "Your outputs will be stored in PawFinder's database and must remain compliant with Google Places API terms.",
-    "You MUST assign the trust badge, audit_reason, safety_flags, highlights, and overall_summary in one single evaluation so they never contradict each other.",
-    `Note: This business has ${userRatingsTotal} total reviews on Google. You are evaluating a sample of the most recent reviews.`,
+    `You are evaluating a sample of Google reviews for a provider with a total rating of ${rating.toFixed(1)} stars across ${userRatingsTotal} reviews.`,
+    `Calculated Baseline Badge: ${baselineBadge}.`,
     "",
-    "Strict badge rules:",
-    'RULE 1 (Volume Filter): If total reviews < 5, trust_badge MUST be "GRAY".',
-    'RULE 1B (Sample Context): If Google total reviews are 5 or more, do not assign "GRAY" solely because the provided review sample is small. Only use "GRAY" when the supplied sample genuinely lacks enough information for a reliable conclusion.',
-    'RULE 2 (Level 3 Critical Safety Issue): Any mention of theft, physical abuse, lost pet, unauthorized access, or unlocked door MUST result in an instant "RED" badge regardless of positive reviews.',
-    'RULE 3 (Level 2 Service Pattern): If 2 or more reviews report severe service failures such as rushed visits under 5 minutes, missed feedings, or uncleaned litter boxes, trust_badge MUST be "RED".',
-    'RULE 4 (Isolated Incident & Response): If only 1 minor or moderate complaint exists among 10+ positive reviews, or if the provider gave a reasonable response such as a traffic delay, the badge should be "GREEN" or "YELLOW" and the issue should be treated as isolated.',
-    "RULE 5 (Recency Decay): Complaints older than 2 years carry minimal weight unless they are Level 3 critical issues.",
-    "RULE 6 (No Review Quotes): Never copy, quote, or closely reproduce any raw review sentence, clause, or unique wording.",
-    "RULE 7 (Synthetic Summaries Only): safety_flags and highlights must be high-level paraphrased topic summaries such as 'Repeated concerns about missed visits' or 'Frequent praise for calm pet handling'.",
-    "RULE 8 (Layman Explanation): audit_reason must be a short 1-2 sentence explanation in plain English that explains why the badge was assigned.",
-    "RULE 9 (Consistency): overall_summary must align with trust_badge and audit_reason without softening, contradicting, or ignoring the main concern.",
-    'RULE 10 (RED Summary): If trust_badge is "RED", overall_summary MUST lead with the critical safety or repeated severe service issue before mentioning any positive feedback.',
-    'RULE 11 (YELLOW Summary): If trust_badge is "YELLOW", overall_summary MUST mention the isolated complaint or mixed concern alongside the broader positive or mixed feedback.',
-    'RULE 12 (GREEN Summary): If trust_badge is "GREEN", overall_summary MUST emphasize a clean record, reliability, and strong customer satisfaction.',
-    'RULE 13 (GRAY Summary): If trust_badge is "GRAY", overall_summary MUST explain that there are fewer than 5 reviews or otherwise not enough review volume for a reliable conclusion.',
-    "CRITICAL FORMATTING RULE: You MUST return a valid JSON object containing ALL 5 keys: 'trust_badge', 'audit_reason', 'safety_flags', 'highlights', and 'overall_summary'. If there are no safety flags or highlights, you MUST return an empty array [] for those fields. Never omit a key.",
+    "YOUR ROLE:",
+    "- Act as a safety and risk auditor.",
+    "- Summarize the customer consensus into a unified overall_summary.",
+    "- Use the deterministic baseline badge as the starting point instead of deciding from scratch.",
+    "",
+    "STRICT OVERRIDE RULES:",
+    '- If Baseline is GREEN: keep GREEN unless the review sample contains explicit critical safety hazards such as pet escape, injury, unauthorized treatment, abuse, theft, physical harm, or severe systemic failure. Downgrade GREEN to RED for critical safety hazards or to YELLOW for severe service failures. Do not downgrade GREEN for minor inconveniences such as parking, pricing, or small scheduling delays.',
+    "- If Baseline is YELLOW: keep YELLOW unless the review sample shows critical safety hazards or severe systemic failure that justify RED.",
+    "- If Baseline is RED: keep RED. Do not upgrade RED from the review sample.",
+    '- Never return GRAY when total Google reviews are 5 or more.',
+    "",
+    "Additional rules:",
+    "Complaints older than 2 years carry minimal weight unless they are critical safety issues.",
+    "Never copy or quote raw review wording. Use only synthetic summaries.",
+    "safety_flags and highlights must be short paraphrased topic phrases, not full sentences.",
+    "audit_reason must be a short plain-English explanation for the final badge.",
+    "overall_summary must align with the final trust_badge and audit_reason.",
+    'If trust_badge is "RED", overall_summary must lead with the critical safety or severe systemic issue.',
+    'If trust_badge is "YELLOW", overall_summary must mention the complaint or caution alongside broader sentiment.',
+    'If trust_badge is "GREEN", overall_summary must emphasize reliability and strong customer satisfaction.',
+    "CRITICAL FORMATTING RULE: Return a valid JSON object containing all 5 keys: trust_badge, audit_reason, safety_flags, highlights, and overall_summary. If there are no safety flags or highlights, return an empty array [].",
     "",
     `Use the evaluation date "${evaluationDate}" when applying recency decay.`,
-    "Keep audit_reason concise, deterministic, and understandable to non-experts.",
     "Prefer a single plain-English sentence for audit_reason and keep it under 180 characters whenever possible.",
-    "Keep each safety_flags or highlights item to one short topic phrase, not a full sentence.",
+    "Keep each safety_flags or highlights item to one short topic phrase.",
     "Keep overall_summary to 2-3 plain-English sentences maximum.",
-    "Do not mention rules by number in the output.",
   ].join("\n");
 }
 
@@ -183,22 +330,30 @@ export function sanitizeTrustReviewInputs(reviews: string[]) {
 
 export async function evaluateTrustReviews({
   reviews,
+  rating,
   userRatingsTotal,
+  baselineBadge,
   evaluationDate = new Date().toISOString().slice(0, 10),
 }: {
   reviews: string[];
+  rating: number;
   userRatingsTotal: number;
+  baselineBadge: Exclude<DeterministicBaselineBadge, "GRAY">;
   evaluationDate?: string;
 }): Promise<TrustEvalOutput> {
   const sanitizedReviews = sanitizeTrustReviewInputs(reviews);
 
   if (sanitizedReviews.length === 0) {
-    console.warn("[trust-eval:input] No usable review text remained after sanitization.");
-    return buildGrayTrustSnapshot({
-      auditReason:
-        "There are not enough usable written reviews for PawFinder to make a reliable quality assessment.",
-      overallSummary:
-        "The available review data is missing meaningful written feedback, so PawFinder cannot draw a reliable overall conclusion yet.",
+    console.warn("[trust-eval:input] No usable review text remained after sanitization. Returning baseline-only snapshot.", {
+      baseline_badge: baselineBadge,
+      rating,
+      user_ratings_total: userRatingsTotal,
+    });
+    return buildBaselineTrustSnapshot({
+      baselineBadge,
+      rating,
+      userRatingsTotal,
+      hasSampleReviews: false,
     });
   }
 
@@ -219,14 +374,25 @@ export async function evaluateTrustReviews({
           max_tokens: 1200,
           response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: buildTrustEvaluationSystemPrompt(evaluationDate, userRatingsTotal) },
+            {
+              role: "system",
+              content: buildHybridTrustEvaluationSystemPrompt({
+                evaluationDate,
+                rating,
+                userRatingsTotal,
+                baselineBadge,
+              }),
+            },
             {
               role: "user",
               content: JSON.stringify(
                 {
-                  task: "Evaluate these reviews and assign a trust badge.",
+                  task: "Audit these sampled reviews and decide whether to keep or override the deterministic baseline badge.",
                   evaluation_date: evaluationDate,
-                  total_reviews: sanitizedReviews.length,
+                  baseline_badge: baselineBadge,
+                  google_rating: rating,
+                  total_google_reviews: userRatingsTotal,
+                  review_sample_count: sanitizedReviews.length,
                   reviews: sanitizedReviews,
                 },
                 null,
@@ -300,8 +466,14 @@ export async function evaluateTrustReviews({
       return buildUnavailableTrustSnapshot();
     }
 
+    const trustBadge = coerceHybridBadge({
+      baselineBadge,
+      candidateBadge: validated.data.trust_badge,
+    });
+
     return {
       ...validated.data,
+      trust_badge: trustBadge,
       audit_reason: truncateAtWordBoundary(validated.data.audit_reason, AUDIT_REASON_FINAL_MAX),
       safety_flags: normalizeTopicPoints(validated.data.safety_flags),
       highlights: normalizeTopicPoints(validated.data.highlights),
