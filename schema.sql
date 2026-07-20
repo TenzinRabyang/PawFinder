@@ -72,6 +72,15 @@ CREATE TABLE IF NOT EXISTS pf_subscriptions (
     current_period_end TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS search_intent_feedback (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    search_term TEXT NOT NULL,
+    category TEXT,
+    species TEXT[] DEFAULT '{}',
+    location TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 ALTER TABLE pf_providers
     ADD COLUMN IF NOT EXISTS ai_tagging_skipped_low_content BOOLEAN DEFAULT false;
 
@@ -117,6 +126,7 @@ ALTER TABLE pf_provider_coords ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pf_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pf_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pf_subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE search_intent_feedback ENABLE ROW LEVEL SECURITY;
 
 -- 4. RLS Policies
 
@@ -208,3 +218,4 @@ WITH CHECK (
 CREATE INDEX IF NOT EXISTS idx_pf_providers_google_place_id ON pf_providers(google_place_id);
 CREATE INDEX IF NOT EXISTS idx_pf_reviews_provider_id ON pf_reviews(provider_id);
 CREATE INDEX IF NOT EXISTS idx_pf_provider_coords_provider_id ON pf_provider_coords(provider_id);
+CREATE INDEX IF NOT EXISTS idx_search_intent_feedback_created_at ON search_intent_feedback(created_at DESC);
