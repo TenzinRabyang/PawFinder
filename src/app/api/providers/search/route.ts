@@ -178,163 +178,171 @@ async function getEnrichedPlaces(supabase: Awaited<ReturnType<typeof createClien
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const postcode = searchParams.get('postcode')
-  const category = searchParams.get('category') || 'pet_care'
-  const animal = searchParams.get('animal')
-  const service = searchParams.get('service')
-  const breed = searchParams.get('breed')
-  const forceRefresh = searchParams.get('forceRefresh') === 'true'
+  try {
+    const { searchParams } = new URL(request.url)
+    const postcode = searchParams.get('postcode')
+    const category = searchParams.get('category') || 'pet_care'
+    const animal = searchParams.get('animal')
+    const service = searchParams.get('service')
+    const breed = searchParams.get('breed')
+    const forceRefresh = searchParams.get('forceRefresh') === 'true'
 
-  if (!postcode) {
-    return NextResponse.json({ error: 'Postcode is required' }, { status: 400 })
-  }
-
-  const postcodeRegex = /^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/i
-  if (!postcodeRegex.test(postcode.trim())) {
-    return NextResponse.json({ error: 'Please enter a full, valid UK postcode (e.g. S10 1BD)' }, { status: 400 })
-  }
-
-  const radius = 10000
-  const cacheKey = `v2:${normalizePostcode(postcode)}:${category}:${radius}m`
-  const supabase = await createClient()
-  const supabaseAdmin = createAdminClient()
-
-  if (forceRefresh) {
-    const isAdmin = await isAdminForceRefreshAllowed(supabase)
-    if (!isAdmin) {
-      return NextResponse.json({ error: 'Force refresh is restricted to admin users' }, { status: 403 })
-    }
-  }
-
-  let enrichedPlaces: any[] = []
-  let searchOrigin: SearchCoords | null = null
-
-  if (!forceRefresh) {
-    const { data: cached, error: cacheReadError } = await supabaseAdmin
-      .from('pf_search_cache')
-      .select('results, search_lat, search_lng')
-      .eq('cache_key', cacheKey)
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle()
-
-    if (cacheReadError) {
-      console.error('[search-cache] failed to read pf_search_cache')
-      return NextResponse.json({ error: 'Search cache read failed' }, { status: 500 })
+    if (!postcode) {
+      return NextResponse.json({ error: 'Postcode is required' }, { status: 400 })
     }
 
-    if (cached?.results) {
-      enrichedPlaces = cached.results
-      searchOrigin =
-        cached.search_lat !== null && cached.search_lng !== null
-          ? { lat: Number(cached.search_lat), lng: Number(cached.search_lng) }
-          : null
-    }
-  }
-
-  if (enrichedPlaces.length === 0) {
-    const coords = await getPostcodeCoords(postcode)
-    if (!coords) {
-      return NextResponse.json({ error: 'Invalid UK postcode' }, { status: 400 })
+    const postcodeRegex = /^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$/i
+    if (!postcodeRegex.test(postcode.trim())) {
+      return NextResponse.json({ error: 'Please enter a full, valid UK postcode (e.g. S10 1BD)' }, { status: 400 })
     }
 
-    searchOrigin = coords
+    const radius = 10000
+    const cacheKey = `v2:${normalizePostcode(postcode)}:${category}:${radius}m`
+    const supabase = await createClient()
+    const supabaseAdmin = createAdminClient()
 
-    try {
-      enrichedPlaces = await getEnrichedPlaces(supabase, coords, category)
-
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 7)
-
-      const { error: cacheWriteError } = await supabaseAdmin.from('pf_search_cache').upsert(
-        {
-          cache_key: cacheKey,
-          results: enrichedPlaces,
-          search_lat: coords.lat,
-          search_lng: coords.lng,
-          expires_at: expiresAt.toISOString(),
-        },
-        { onConflict: 'cache_key' }
-      )
-
-      if (cacheWriteError) {
-        console.error('[search-cache] failed to persist pf_search_cache')
-        return NextResponse.json({ error: 'Search cache write failed' }, { status: 500 })
+    if (forceRefresh) {
+      const isAdmin = await isAdminForceRefreshAllowed(supabase)
+      if (!isAdmin) {
+        return NextResponse.json({ error: 'Force refresh is restricted to admin users' }, { status: 403 })
       }
-    } catch (error: any) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
     }
-  }
 
-  let finalResults = enrichedPlaces
-  if (animal || service || breed) {
-    const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
-    finalResults = enrichedPlaces.filter((provider: any) => {
-      const isUnclaimed =
-        provider.subscription_tier === 'free' &&
-        !provider.is_claimed &&
-        (!provider.animals_served || provider.animals_served.length === 0) &&
-        (!provider.services || provider.services.length === 0) &&
-        (!provider.breeds_specialised || provider.breeds_specialised.length === 0) &&
-        (!provider.breeds_general_inferred || provider.breeds_general_inferred.length === 0)
+    let enrichedPlaces: any[] = []
+    let searchOrigin: SearchCoords | null = null
 
-      if (isUnclaimed) return true
-      if (animal && provider.animals_served?.length > 0 && !provider.animals_served.includes(animal)) return false
-      if (service && provider.services?.length > 0 && !provider.services.includes(service)) return false
+    if (!forceRefresh) {
+      const { data: cached, error: cacheReadError } = await supabaseAdmin
+        .from('pf_search_cache')
+        .select('results, search_lat, search_lng')
+        .eq('cache_key', cacheKey)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle()
 
-      if (breed) {
-        const matchesSpecificBreed = provider.breeds_specialised?.includes(breed)
-        const matchesGeneralCoverage =
-          inferredAnimalForBreed && provider.breeds_general_inferred?.includes(inferredAnimalForBreed)
+      if (cacheReadError) {
+        console.error('[search-cache] failed to read pf_search_cache')
+        return NextResponse.json({ error: 'Search cache read failed' }, { status: 500 })
+      }
 
-        if (provider.breeds_specialised?.length > 0 || provider.breeds_general_inferred?.length > 0) {
-          if (!matchesSpecificBreed && !matchesGeneralCoverage) {
-            return false
+      if (cached?.results) {
+        enrichedPlaces = cached.results
+        searchOrigin =
+          cached.search_lat !== null && cached.search_lng !== null
+            ? { lat: Number(cached.search_lat), lng: Number(cached.search_lng) }
+            : null
+      }
+    }
+
+    if (enrichedPlaces.length === 0) {
+      const coords = await getPostcodeCoords(postcode)
+      if (!coords) {
+        return NextResponse.json({ error: 'Invalid UK postcode' }, { status: 400 })
+      }
+
+      searchOrigin = coords
+
+      try {
+        enrichedPlaces = await getEnrichedPlaces(supabase, coords, category)
+
+        const expiresAt = new Date()
+        expiresAt.setDate(expiresAt.getDate() + 7)
+
+        const { error: cacheWriteError } = await supabaseAdmin.from('pf_search_cache').upsert(
+          {
+            cache_key: cacheKey,
+            results: enrichedPlaces,
+            search_lat: coords.lat,
+            search_lng: coords.lng,
+            expires_at: expiresAt.toISOString(),
+          },
+          { onConflict: 'cache_key' }
+        )
+
+        if (cacheWriteError) {
+          console.error('[search-cache] failed to persist pf_search_cache')
+          return NextResponse.json({ error: 'Search cache write failed' }, { status: 500 })
+        }
+      } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    }
+
+    let finalResults = enrichedPlaces
+    if (animal || service || breed) {
+      const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
+      finalResults = enrichedPlaces.filter((provider: any) => {
+        const isUnclaimed =
+          provider.subscription_tier === 'free' &&
+          !provider.is_claimed &&
+          (!provider.animals_served || provider.animals_served.length === 0) &&
+          (!provider.services || provider.services.length === 0) &&
+          (!provider.breeds_specialised || provider.breeds_specialised.length === 0) &&
+          (!provider.breeds_general_inferred || provider.breeds_general_inferred.length === 0)
+
+        if (isUnclaimed) return true
+        if (animal && provider.animals_served?.length > 0 && !provider.animals_served.includes(animal)) return false
+        if (service && provider.services?.length > 0 && !provider.services.includes(service)) return false
+
+        if (breed) {
+          const matchesSpecificBreed = provider.breeds_specialised?.includes(breed)
+          const matchesGeneralCoverage =
+            inferredAnimalForBreed && provider.breeds_general_inferred?.includes(inferredAnimalForBreed)
+
+          if (provider.breeds_specialised?.length > 0 || provider.breeds_general_inferred?.length > 0) {
+            if (!matchesSpecificBreed && !matchesGeneralCoverage) {
+              return false
+            }
           }
         }
+
+        return true
+      })
+    }
+
+    const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
+    finalResults = finalResults.map((provider: any) => {
+      if (!breed || !inferredAnimalForBreed) {
+        return provider
       }
 
-      return true
-    })
-  }
+      if (provider.breeds_specialised?.includes(breed)) {
+        return { ...provider, breed_match_type: 'specific' }
+      }
 
-  const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
-  finalResults = finalResults.map((provider: any) => {
-    if (!breed || !inferredAnimalForBreed) {
+      if (provider.breeds_general_inferred?.includes(inferredAnimalForBreed)) {
+        return { ...provider, breed_match_type: 'general_inferred' }
+      }
+
       return provider
+    })
+
+    finalResults = [...finalResults].sort((a: any, b: any) => {
+      const distanceA = typeof a.distance_miles === 'number' ? a.distance_miles : Number.POSITIVE_INFINITY
+      const distanceB = typeof b.distance_miles === 'number' ? b.distance_miles : Number.POSITIVE_INFINITY
+      return distanceA - distanceB
+    })
+
+    if (finalResults.length > 0) {
+      finalResults[0] = {
+        ...finalResults[0],
+        is_featured_result: true,
+      }
     }
 
-    if (provider.breeds_specialised?.includes(breed)) {
-      return { ...provider, breed_match_type: 'specific' }
-    }
-
-    if (provider.breeds_general_inferred?.includes(inferredAnimalForBreed)) {
-      return { ...provider, breed_match_type: 'general_inferred' }
-    }
-
-    return provider
-  })
-
-  finalResults = [...finalResults].sort((a: any, b: any) => {
-    const distanceA = typeof a.distance_miles === 'number' ? a.distance_miles : Number.POSITIVE_INFINITY
-    const distanceB = typeof b.distance_miles === 'number' ? b.distance_miles : Number.POSITIVE_INFINITY
-    return distanceA - distanceB
-  })
-
-  if (finalResults.length > 0) {
-    finalResults[0] = {
-      ...finalResults[0],
-      is_featured_result: true,
-    }
+    return NextResponse.json({
+      pf_providers: finalResults,
+      search_origin: searchOrigin,
+      cache: {
+        key: cacheKey,
+        ttl_days: 7,
+        force_refresh_applied: forceRefresh,
+      },
+    })
+  } catch (error) {
+    console.error('[providers-search] Unexpected search route failure', error)
+    return NextResponse.json(
+      { error: 'Search is temporarily unavailable. Please try again shortly.' },
+      { status: 500 }
+    )
   }
-
-  return NextResponse.json({
-    pf_providers: finalResults,
-    search_origin: searchOrigin,
-    cache: {
-      key: cacheKey,
-      ttl_days: 7,
-      force_refresh_applied: forceRefresh,
-    },
-  })
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { isSupabasePublicEnvConfigured } from '@/utils/supabase/config'
 import { useRouter } from 'next/navigation'
 
 export default function LoginForm() {
@@ -11,9 +12,14 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
+  const isAuthAvailable = isSupabasePublicEnvConfigured()
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!isAuthAvailable) {
+      setError('Sign-in is temporarily unavailable because Supabase auth is not configured.')
+      return
+    }
     setLoading(true)
     setError(null)
 
@@ -32,6 +38,10 @@ export default function LoginForm() {
   }
 
   const handleEmailSignup = async () => {
+    if (!isAuthAvailable) {
+      setError('Sign-up is temporarily unavailable because Supabase auth is not configured.')
+      return
+    }
     setLoading(true)
     setError(null)
 
@@ -52,6 +62,10 @@ export default function LoginForm() {
   }
 
   const handleGoogleLogin = async () => {
+    if (!isAuthAvailable) {
+      setError('Google sign-in is temporarily unavailable because Supabase auth is not configured.')
+      return
+    }
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -62,6 +76,11 @@ export default function LoginForm() {
 
   return (
     <div className="mt-8 space-y-6">
+      {!isAuthAvailable && (
+        <div className="text-sm text-center p-3 bg-amber-50 text-amber-800 rounded-lg">
+          Authentication is currently unavailable in this environment.
+        </div>
+      )}
       {error && (
         <div className="text-sm text-center p-3 bg-red-50 text-red-600 rounded-lg">
           {error}
@@ -92,7 +111,7 @@ export default function LoginForm() {
         <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isAuthAvailable}
             className="flex w-full justify-center rounded-full bg-[#829e8d] px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#6c8676] focus:outline-none focus:ring-2 focus:ring-[#829e8d] focus:ring-offset-2 disabled:opacity-50 transition-colors"
           >
             {loading ? 'Loading...' : 'Sign In'}
@@ -100,7 +119,7 @@ export default function LoginForm() {
           <button
             type="button"
             onClick={handleEmailSignup}
-            disabled={loading}
+            disabled={loading || !isAuthAvailable}
             className="flex w-full justify-center rounded-full bg-stone-100 px-4 py-2.5 text-sm font-semibold text-stone-700 shadow-sm hover:bg-stone-200 focus:outline-none focus:ring-2 focus:ring-stone-200 focus:ring-offset-2 disabled:opacity-50 transition-colors"
           >
             Sign Up
@@ -119,6 +138,7 @@ export default function LoginForm() {
 
       <button
         onClick={handleGoogleLogin}
+        disabled={!isAuthAvailable}
         className="flex w-full items-center justify-center gap-3 rounded-full border border-stone-300 bg-white px-4 py-3 text-sm font-medium text-stone-700 shadow-sm transition-colors hover:bg-stone-50 focus:outline-none focus:ring-2 focus:ring-stone-200 focus:ring-offset-2"
       >
         <svg className="h-5 w-5" viewBox="0 0 24 24">
