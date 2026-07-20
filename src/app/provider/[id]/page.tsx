@@ -121,6 +121,7 @@ type TrustSnapshotPayload = {
   highlights: string[]
   ai_version?: number | null
   refreshed?: boolean
+  loading?: boolean
   error?: string
 }
 
@@ -488,6 +489,14 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         dbProvider = (providerByPlaceId as ProviderProfileRecord | null) || null
       }
 
+      console.log('[Trust Engine] Provider DB Row fetched:', dbProvider ? {
+        id: dbProvider.id,
+        google_place_id: dbProvider.google_place_id,
+        trust_badge: dbProvider.trust_badge ?? null,
+        audit_reason: dbProvider.audit_reason ?? null,
+        ai_version: dbProvider.ai_version ?? null,
+      } : null)
+
       const canonicalPlaceId = dbProvider?.google_place_id || id
       const canFetchLiveDetails = Boolean(
         (dbProvider?.google_place_id && looksLikeGooglePlaceId(dbProvider.google_place_id)) ||
@@ -687,9 +696,26 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       })
 
       const savedTrustSnapshot = getSavedTrustSnapshot(resolvedProvider)
+      console.log('[Trust Engine] AI Version check result:', {
+        provider_id: resolvedProvider.id,
+        google_place_id: resolvedProvider.google_place_id,
+        ai_version: resolvedProvider.ai_version ?? null,
+        has_saved_snapshot: Boolean(savedTrustSnapshot),
+        trust_badge: resolvedProvider.trust_badge ?? null,
+      })
       if (savedTrustSnapshot) {
         setTrustSnapshot(savedTrustSnapshot)
       } else {
+        setTrustSnapshot({
+          trust_badge: 'GRAY',
+          audit_reason: 'Analyzing trust signals from available reviews...',
+          safety_flags: [],
+          highlights: [],
+          ai_version: resolvedProvider.ai_version ?? null,
+          refreshed: false,
+          loading: true,
+        })
+
         try {
           const trustRes = await fetch(
             `/api/providers/${encodeURIComponent(dbProvider?.id || id)}/trust-snapshot?place_id=${encodeURIComponent(
@@ -700,6 +726,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
 
           if (trustRes.ok && trustRes.headers.get('content-type')?.includes('application/json')) {
             const trustPayload = (await trustRes.json()) as TrustSnapshotPayload
+            console.log('[Trust Engine] API Refresh status code and payload:', trustRes.status, trustPayload)
             if (!trustPayload.error) {
               setTrustSnapshot({
                 trust_badge: trustPayload.trust_badge,
@@ -708,11 +735,38 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 highlights: Array.isArray(trustPayload.highlights) ? trustPayload.highlights : [],
                 ai_version: trustPayload.ai_version ?? null,
                 refreshed: Boolean(trustPayload.refreshed),
+                loading: false,
               })
             }
+          } else {
+            const errorPayload = (await trustRes.json().catch(() => ({}))) as { error?: string }
+            console.log('[Trust Engine] API Refresh status code and payload:', trustRes.status, errorPayload)
+            setTrustSnapshot({
+              trust_badge: 'GRAY',
+              audit_reason:
+                typeof errorPayload.error === 'string'
+                  ? errorPayload.error
+                  : 'Trust analysis is temporarily unavailable.',
+              safety_flags: [],
+              highlights: [],
+              ai_version: resolvedProvider.ai_version ?? null,
+              refreshed: false,
+              loading: false,
+              error: typeof errorPayload.error === 'string' ? errorPayload.error : undefined,
+            })
           }
         } catch {
           console.error('Failed to load provider trust snapshot')
+          setTrustSnapshot({
+            trust_badge: 'GRAY',
+            audit_reason: 'Trust analysis is temporarily unavailable.',
+            safety_flags: [],
+            highlights: [],
+            ai_version: resolvedProvider.ai_version ?? null,
+            refreshed: false,
+            loading: false,
+            error: 'Trust analysis is temporarily unavailable.',
+          })
         }
       }
     } catch {
@@ -946,6 +1000,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 {trustSnapshot ? (
                   <div className="mt-5">
                     <TrustBadge trustBadge={trustSnapshot.trust_badge} />
+                    {trustSnapshot.loading ? (
+                      <p className="mt-2 text-sm text-[#6C6F68]">Analyzing trust signals from available reviews...</p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

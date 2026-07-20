@@ -154,6 +154,8 @@ export async function GET(
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const fallbackPlaceId = searchParams.get("place_id")?.trim() || null;
+    const placeIdFromRequest = !isUuidLike(id) ? id : null;
+    const resolvedPlaceId = fallbackPlaceId || placeIdFromRequest;
 
     const supabaseAdmin = createAdminClient();
     let provider: ProviderTrustRecord | null = null;
@@ -179,12 +181,21 @@ export async function GET(
       provider = (data as ProviderTrustRecord | null) || null;
     }
 
-    if (!provider) {
-      return NextResponse.json({ error: "Provider not found." }, { status: 404 });
-    }
+    console.log("[Trust Engine] Provider DB Row fetched:", provider ? {
+      id: provider.id,
+      google_place_id: provider.google_place_id,
+      trust_badge: provider.trust_badge,
+      ai_version: provider.ai_version,
+    } : null);
 
-    const cached = getCachedTrustPayload(provider);
-    if (cached) {
+    const cached = provider ? getCachedTrustPayload(provider) : null;
+    console.log("[Trust Engine] AI Version check result:", {
+      ai_version: provider?.ai_version ?? null,
+      has_cached_snapshot: Boolean(cached),
+      trust_badge: provider?.trust_badge ?? null,
+    });
+
+    if (cached && provider) {
       return NextResponse.json({
         ...cached,
         ai_version: provider.ai_version ?? TRUST_AI_VERSION,
@@ -193,38 +204,86 @@ export async function GET(
     }
 
     const googleApiKey = process.env.GOOGLE_PLACES_API_KEY;
-    const googleReviewTexts = googleApiKey ? await fetchGoogleReviewTexts(provider, googleApiKey) : [];
-    const nativeReviewTexts = await fetchNativeReviewTexts(provider.id);
+    const googleReviewTexts =
+      googleApiKey && (provider?.google_place_id || resolvedPlaceId)
+        ? await fetchGoogleReviewTexts(
+            {
+              id: provider?.id || "ephemeral",
+              google_place_id: provider?.google_place_id || resolvedPlaceId || null,
+              name: provider?.name || null,
+            },
+            googleApiKey
+          )
+        : [];
+    const nativeReviewTexts = provider ? await fetchNativeReviewTexts(provider.id) : [];
     const reviewTexts = [...googleReviewTexts, ...nativeReviewTexts];
+
+    if (!provider && !resolvedPlaceId) {
+      return NextResponse.json({ error: "Provider not found." }, { status: 404 });
+    }
+
+    if (reviewTexts.length === 0) {
+      const emptySnapshot: TrustEvalOutput = {
+        trust_badge: "GRAY",
+        audit_reason: "Insufficient data (under 5 reviews)",
+        safety_flags: [],
+        highlights: [],
+      };
+
+      console.log("[Trust Engine] API Refresh status code and payload:", 200, {
+        refreshed: false,
+        reason: "no_review_text_available",
+        trust_badge: emptySnapshot.trust_badge,
+      });
+
+      return NextResponse.json({
+        ...emptySnapshot,
+        ai_version: provider?.ai_version ?? null,
+        refreshed: false,
+      });
+    }
 
     const evaluated = await evaluateTrustReviews({ reviews: reviewTexts });
 
-    const { error: updateError } = await supabaseAdmin
-      .from("pf_providers")
-      .update({
-        trust_badge: evaluated.trust_badge,
-        audit_reason: evaluated.audit_reason,
-        safety_flags: evaluated.safety_flags,
-        highlights: evaluated.highlights,
-        ai_version: TRUST_AI_VERSION,
-      })
-      .eq("id", provider.id);
+    if (provider) {
+      const { error: updateError } = await supabaseAdmin
+        .from("pf_providers")
+        .update({
+          trust_badge: evaluated.trust_badge,
+          audit_reason: evaluated.audit_reason,
+          safety_flags: evaluated.safety_flags,
+          highlights: evaluated.highlights,
+          ai_version: TRUST_AI_VERSION,
+        })
+        .eq("id", provider.id);
 
-    if (updateError) {
-      return NextResponse.json(
-        { error: "Failed to persist trust snapshot." },
-        { status: 500 }
-      );
+      if (updateError) {
+        return NextResponse.json(
+          { error: "Failed to persist trust snapshot." },
+          { status: 500 }
+        );
+      }
     }
+
+    console.log("[Trust Engine] API Refresh status code and payload:", 200, {
+      refreshed: Boolean(provider),
+      trust_badge: evaluated.trust_badge,
+      ai_version: provider ? TRUST_AI_VERSION : null,
+      review_count: reviewTexts.length,
+    });
 
     return NextResponse.json({
       ...evaluated,
-      ai_version: TRUST_AI_VERSION,
-      refreshed: true,
+      ai_version: provider ? TRUST_AI_VERSION : null,
+      refreshed: Boolean(provider),
     });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error.";
+
+    console.log("[Trust Engine] API Refresh status code and payload:", 500, {
+      error: message,
+    });
 
     return NextResponse.json({ error: message }, { status: 500 });
   }
