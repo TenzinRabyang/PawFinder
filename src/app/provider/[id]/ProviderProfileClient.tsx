@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { useState, useEffect, use, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check } from 'lucide-react'
@@ -160,14 +160,12 @@ type ProviderPageBreedStatus =
   | 'category_unresolved'
 
 export default function ProviderProfile({
-  params,
+  id,
   initialTrustSnapshot,
 }: {
-  params: Promise<{ id: string }>
+  id: string
   initialTrustSnapshot?: InitialTrustSnapshot | null
 }) {
-  const resolvedParams = use(params)
-  const id = resolvedParams.id
   const searchParams = useSearchParams()
   const isFeaturedProfile = searchParams.get('featured') === '1'
   const requestedCategory = searchParams.get('category')

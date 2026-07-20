@@ -47,7 +47,7 @@ export default async function ProviderProfilePage({ params }: { params: Promise<
 
   return (
     <ProviderProfileClient
-      params={params}
+      id={resolvedParams.id}
       initialTrustSnapshot={initialTrustSnapshot}
     />
   )
