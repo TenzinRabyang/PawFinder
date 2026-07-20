@@ -129,7 +129,7 @@ function getProviderSpecies(provider: SearchProviderRecord) {
   const supportedSpecies = new Set<NeedsBasedSearchFilters['species'][number]>()
 
   for (const [species, tokens] of Object.entries(SPECIES_TO_PROVIDER_TOKENS) as Array<
-    [NeedsBasedSearchFilters['species'][number], string[]]
+    [NeedsBasedSearchFilters['species'][number], readonly string[]]
   >) {
     if (tokens.some((token) => normalizedTokens.includes(token))) {
       supportedSpecies.add(species)
