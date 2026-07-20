@@ -12,7 +12,7 @@ type TrustAndReviewsCardProps = {
   auditReason?: string | null;
   safetyFlags?: string[];
   highlights?: string[];
-  reviewSummary?: string | null;
+  overallSummary?: string | null;
   isLoading?: boolean;
   hasError?: boolean;
   className?: string;
@@ -83,7 +83,7 @@ export default function TrustAndReviewsCard({
   auditReason,
   safetyFlags = [],
   highlights = [],
-  reviewSummary,
+  overallSummary,
   isLoading = false,
   hasError = false,
   className = "",
@@ -111,7 +111,7 @@ export default function TrustAndReviewsCard({
         ? "We are analyzing the latest provider record now."
         : "We are still gathering enough feedback to explain this provider clearly.");
   const expandedSummary =
-    reviewSummary?.trim() ||
+    overallSummary?.trim() ||
     (hasError
       ? "Review summary is temporarily unavailable."
       : "We are still gathering enough review detail to show a broader summary for this business.");

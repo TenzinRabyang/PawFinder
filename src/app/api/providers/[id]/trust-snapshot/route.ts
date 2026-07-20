@@ -4,7 +4,11 @@ import {
   getProviderForPlaceIdRecovery,
   resolvePlaceDetailsWithAutoHeal,
 } from "@/lib/provider-place-id-recovery";
-import { evaluateTrustReviews, type TrustEvalOutput } from "@/lib/trust-eval";
+import {
+  CURRENT_AI_VERSION,
+  evaluateTrustReviews,
+  type TrustEvalOutput,
+} from "@/lib/trust-eval";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 type ProviderTrustRecord = {
@@ -15,6 +19,7 @@ type ProviderTrustRecord = {
   audit_reason?: string | null;
   safety_flags?: unknown;
   highlights?: unknown;
+  overall_summary?: string | null;
   ai_version?: number | null;
 };
 
@@ -23,8 +28,6 @@ type NativeReviewRecord = {
   comment?: string | null;
   pf_profiles?: { full_name: string | null } | null;
 };
-
-const TRUST_AI_VERSION = 2;
 
 function isUuidLike(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
@@ -37,15 +40,17 @@ function normalizeStringArray(value: unknown) {
 function getCachedTrustPayload(provider: ProviderTrustRecord): TrustEvalOutput | null {
   if (
     provider.ai_version &&
-    provider.ai_version >= TRUST_AI_VERSION &&
+    provider.ai_version >= CURRENT_AI_VERSION &&
     typeof provider.trust_badge === "string" &&
-    typeof provider.audit_reason === "string"
+    typeof provider.audit_reason === "string" &&
+    typeof provider.overall_summary === "string"
   ) {
     return {
       trust_badge: provider.trust_badge as TrustEvalOutput["trust_badge"],
       audit_reason: provider.audit_reason,
       safety_flags: normalizeStringArray(provider.safety_flags),
       highlights: normalizeStringArray(provider.highlights),
+      overall_summary: provider.overall_summary,
     };
   }
 
@@ -163,7 +168,7 @@ export async function GET(
     if (isUuidLike(id)) {
       const { data } = await supabaseAdmin
         .from("pf_providers")
-        .select("id, google_place_id, name, trust_badge, audit_reason, safety_flags, highlights, ai_version")
+        .select("id, google_place_id, name, trust_badge, audit_reason, safety_flags, highlights, overall_summary, ai_version")
         .eq("id", id)
         .maybeSingle();
 
@@ -174,7 +179,7 @@ export async function GET(
       const placeIdToLookup = fallbackPlaceId || id;
       const { data } = await supabaseAdmin
         .from("pf_providers")
-        .select("id, google_place_id, name, trust_badge, audit_reason, safety_flags, highlights, ai_version")
+        .select("id, google_place_id, name, trust_badge, audit_reason, safety_flags, highlights, overall_summary, ai_version")
         .eq("google_place_id", placeIdToLookup)
         .maybeSingle();
 
@@ -198,7 +203,7 @@ export async function GET(
     if (cached && provider) {
       return NextResponse.json({
         ...cached,
-        ai_version: provider.ai_version ?? TRUST_AI_VERSION,
+        ai_version: provider.ai_version ?? CURRENT_AI_VERSION,
         refreshed: false,
       });
     }
@@ -228,7 +233,30 @@ export async function GET(
         audit_reason: "There are not enough saved reviews yet for PawFinder to make a reliable quality assessment.",
         safety_flags: [],
         highlights: [],
+        overall_summary:
+          "There are fewer than 5 usable reviews available, so PawFinder cannot draw a reliable overall conclusion yet.",
       };
+
+      if (provider) {
+        const { error: updateError } = await supabaseAdmin
+          .from("pf_providers")
+          .update({
+            trust_badge: emptySnapshot.trust_badge,
+            audit_reason: emptySnapshot.audit_reason,
+            safety_flags: emptySnapshot.safety_flags,
+            highlights: emptySnapshot.highlights,
+            overall_summary: emptySnapshot.overall_summary,
+            ai_version: CURRENT_AI_VERSION,
+          })
+          .eq("id", provider.id);
+
+        if (updateError) {
+          return NextResponse.json(
+            { error: "Failed to persist trust snapshot." },
+            { status: 500 }
+          );
+        }
+      }
 
       console.log("[Trust Engine] API Refresh status code and payload:", 200, {
         refreshed: false,
@@ -238,8 +266,8 @@ export async function GET(
 
       return NextResponse.json({
         ...emptySnapshot,
-        ai_version: provider?.ai_version ?? null,
-        refreshed: false,
+        ai_version: provider ? CURRENT_AI_VERSION : null,
+        refreshed: Boolean(provider),
       });
     }
 
@@ -253,7 +281,8 @@ export async function GET(
           audit_reason: evaluated.audit_reason,
           safety_flags: evaluated.safety_flags,
           highlights: evaluated.highlights,
-          ai_version: TRUST_AI_VERSION,
+          overall_summary: evaluated.overall_summary,
+          ai_version: CURRENT_AI_VERSION,
         })
         .eq("id", provider.id);
 
@@ -268,13 +297,13 @@ export async function GET(
     console.log("[Trust Engine] API Refresh status code and payload:", 200, {
       refreshed: Boolean(provider),
       trust_badge: evaluated.trust_badge,
-      ai_version: provider ? TRUST_AI_VERSION : null,
+      ai_version: provider ? CURRENT_AI_VERSION : null,
       review_count: reviewTexts.length,
     });
 
     return NextResponse.json({
       ...evaluated,
-      ai_version: provider ? TRUST_AI_VERSION : null,
+      ai_version: provider ? CURRENT_AI_VERSION : null,
       refreshed: Boolean(provider),
     });
   } catch (error) {

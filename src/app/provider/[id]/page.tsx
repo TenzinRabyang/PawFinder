@@ -1,6 +1,7 @@
 import ProviderProfileClient, {
   type InitialTrustSnapshot,
 } from './ProviderProfileClient'
+import { CURRENT_AI_VERSION } from '@/lib/trust-eval'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 function isUuidLike(value: string) {
@@ -11,7 +12,7 @@ async function getInitialTrustSnapshot(id: string): Promise<InitialTrustSnapshot
   const supabaseAdmin = createAdminClient()
   const query = supabaseAdmin
     .from('pf_providers')
-    .select('trust_badge, audit_reason, safety_flags, highlights, ai_version')
+    .select('trust_badge, audit_reason, safety_flags, highlights, overall_summary, ai_version')
 
   const { data } = isUuidLike(id)
     ? await query.eq('id', id).maybeSingle()
@@ -21,8 +22,9 @@ async function getInitialTrustSnapshot(id: string): Promise<InitialTrustSnapshot
     !data ||
     typeof data.trust_badge !== 'string' ||
     typeof data.audit_reason !== 'string' ||
+    typeof data.overall_summary !== 'string' ||
     typeof data.ai_version !== 'number' ||
-    data.ai_version < 2
+    data.ai_version < CURRENT_AI_VERSION
   ) {
     return null
   }
@@ -36,6 +38,7 @@ async function getInitialTrustSnapshot(id: string): Promise<InitialTrustSnapshot
     highlights: Array.isArray(data.highlights)
       ? data.highlights.filter((item): item is string => typeof item === 'string')
       : [],
+    overall_summary: data.overall_summary,
     ai_version: data.ai_version,
     refreshed: false,
   }

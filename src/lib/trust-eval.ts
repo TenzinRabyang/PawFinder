@@ -1,10 +1,13 @@
 import { z } from "zod";
 
+export const CURRENT_AI_VERSION = 3;
+
 export const TRUST_EVAL_OUTPUT_SCHEMA = z.object({
   trust_badge: z.enum(["GREEN", "YELLOW", "RED", "GRAY"]),
   audit_reason: z.string().min(1).max(240),
   safety_flags: z.array(z.string().min(1).max(140)).max(4).default([]),
   highlights: z.array(z.string().min(1).max(140)).max(4).default([]),
+  overall_summary: z.string().min(1).max(420),
 });
 
 export type TrustEvalOutput = z.infer<typeof TRUST_EVAL_OUTPUT_SCHEMA>;
@@ -46,6 +49,7 @@ export function buildTrustEvaluationSystemPrompt(evaluationDate: string) {
     "You are PawFinder's deterministic Trust & Safety evaluation engine.",
     "You must classify review sets using only the supplied review data and return JSON only.",
     "Your outputs will be stored in PawFinder's database and must remain compliant with Google Places API terms.",
+    "You MUST assign the trust badge, audit_reason, safety_flags, highlights, and overall_summary in one single evaluation so they never contradict each other.",
     "",
     "Strict badge rules:",
     'RULE 1 (Volume Filter): If total reviews < 5, trust_badge MUST be "GRAY".',
@@ -56,11 +60,17 @@ export function buildTrustEvaluationSystemPrompt(evaluationDate: string) {
     "RULE 6 (No Review Quotes): Never copy, quote, or closely reproduce any raw review sentence, clause, or unique wording.",
     "RULE 7 (Synthetic Summaries Only): safety_flags and highlights must be high-level paraphrased topic summaries such as 'Repeated concerns about missed visits' or 'Frequent praise for calm pet handling'.",
     "RULE 8 (Layman Explanation): audit_reason must be a short 1-2 sentence explanation in plain English that explains why the badge was assigned.",
-    "CRITICAL FORMATTING RULE: You MUST return a valid JSON object containing ALL 4 keys: 'trust_badge', 'audit_reason', 'safety_flags', and 'highlights'. If there are no safety flags or highlights, you MUST return an empty array [] for those fields. Never omit a key.",
+    "RULE 9 (Consistency): overall_summary must align with trust_badge and audit_reason without softening, contradicting, or ignoring the main concern.",
+    'RULE 10 (RED Summary): If trust_badge is "RED", overall_summary MUST lead with the critical safety or repeated severe service issue before mentioning any positive feedback.',
+    'RULE 11 (YELLOW Summary): If trust_badge is "YELLOW", overall_summary MUST mention the isolated complaint or mixed concern alongside the broader positive or mixed feedback.',
+    'RULE 12 (GREEN Summary): If trust_badge is "GREEN", overall_summary MUST emphasize a clean record, reliability, and strong customer satisfaction.',
+    'RULE 13 (GRAY Summary): If trust_badge is "GRAY", overall_summary MUST explain that there are fewer than 5 reviews or otherwise not enough review volume for a reliable conclusion.',
+    "CRITICAL FORMATTING RULE: You MUST return a valid JSON object containing ALL 5 keys: 'trust_badge', 'audit_reason', 'safety_flags', 'highlights', and 'overall_summary'. If there are no safety flags or highlights, you MUST return an empty array [] for those fields. Never omit a key.",
     "",
     `Use the evaluation date "${evaluationDate}" when applying recency decay.`,
     "Keep audit_reason concise, deterministic, and understandable to non-experts.",
     "Keep each safety_flags or highlights item to one short topic phrase, not a full sentence.",
+    "Keep overall_summary to 2-3 plain-English sentences maximum.",
     "Do not mention rules by number in the output.",
   ].join("\n");
 }
@@ -141,5 +151,6 @@ export async function evaluateTrustReviews({
     audit_reason: validated.audit_reason.trim(),
     safety_flags: normalizeTopicPoints(validated.safety_flags),
     highlights: normalizeTopicPoints(validated.highlights),
+    overall_summary: validated.overall_summary.trim(),
   };
 }

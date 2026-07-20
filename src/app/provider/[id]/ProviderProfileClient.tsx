@@ -64,6 +64,7 @@ type ProviderProfileRecord = {
   audit_reason?: string | null
   safety_flags?: string[] | null
   highlights?: string[] | null
+  overall_summary?: string | null
   ai_version?: number | null
   [key: string]: unknown
 }
@@ -124,6 +125,7 @@ type TrustSnapshotPayload = {
   audit_reason: string
   safety_flags: string[]
   highlights: string[]
+  overall_summary: string
   ai_version?: number | null
   refreshed?: boolean
   error?: string
@@ -134,6 +136,7 @@ export type InitialTrustSnapshot = TrustSnapshotPayload
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const GOOGLE_PLACE_ID_PATTERN = /^ChI[A-Za-z0-9_-]{10,}$/
+const MIN_TRUST_AI_VERSION = 3
 
 function isUuidLike(value: string) {
   return UUID_PATTERN.test(value.trim())
@@ -227,9 +230,10 @@ export default function ProviderProfile({
     if (
       !record ||
       !record.ai_version ||
-      record.ai_version < 2 ||
+      record.ai_version < MIN_TRUST_AI_VERSION ||
       !record.trust_badge ||
-      !record.audit_reason
+      !record.audit_reason ||
+      !record.overall_summary
     ) {
       return null
     }
@@ -239,6 +243,7 @@ export default function ProviderProfile({
       audit_reason: record.audit_reason,
       safety_flags: Array.isArray(record.safety_flags) ? record.safety_flags : [],
       highlights: Array.isArray(record.highlights) ? record.highlights : [],
+      overall_summary: record.overall_summary,
       ai_version: record.ai_version,
       refreshed: false,
     }
@@ -725,6 +730,7 @@ export default function ProviderProfile({
                 audit_reason: trustPayload.audit_reason,
                 safety_flags: Array.isArray(trustPayload.safety_flags) ? trustPayload.safety_flags : [],
                 highlights: Array.isArray(trustPayload.highlights) ? trustPayload.highlights : [],
+                overall_summary: trustPayload.overall_summary,
                 ai_version: trustPayload.ai_version ?? null,
                 refreshed: Boolean(trustPayload.refreshed),
               })
@@ -880,7 +886,6 @@ export default function ProviderProfile({
 
   const isVerifiedBusiness =
     provider.is_verified || provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium'
-  const visibleAiSummary = provider.review_summary || liveDetails?.ai_summary || null
   const websiteUrl = normalizeExternalUrl(provider.website)
   const hasOnlineBooking =
     typeof provider.has_online_booking === 'boolean' ? provider.has_online_booking : Boolean(provider.booking_url)
@@ -979,7 +984,7 @@ export default function ProviderProfile({
                     auditReason={trustSnapshot?.audit_reason}
                     safetyFlags={trustSnapshot?.safety_flags || []}
                     highlights={trustSnapshot?.highlights || []}
-                    reviewSummary={visibleAiSummary}
+                    overallSummary={trustSnapshot?.overall_summary}
                     isLoading={isTrustSnapshotLoading}
                     hasError={hasTrustSnapshotError}
                   />
