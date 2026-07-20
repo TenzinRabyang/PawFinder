@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 export const CURRENT_AI_VERSION = 4;
+const AUDIT_REASON_SCHEMA_MAX = 360;
+const AUDIT_REASON_FINAL_MAX = 280;
+const OVERALL_SUMMARY_FINAL_MAX = 420;
 
 export const TRUST_EVAL_OUTPUT_SCHEMA = z.object({
   trust_badge: z.enum(["GREEN", "YELLOW", "RED", "GRAY", "UNAVAILABLE"]),
-  audit_reason: z.string().min(1).max(240),
+  audit_reason: z.string().min(1).max(AUDIT_REASON_SCHEMA_MAX),
   safety_flags: z.array(z.string().min(1).max(140)).max(4).default([]),
   highlights: z.array(z.string().min(1).max(140)).max(4).default([]),
   overall_summary: z.string().min(1).max(420),
@@ -83,6 +86,7 @@ export function buildTrustEvaluationSystemPrompt(evaluationDate: string, userRat
     "",
     `Use the evaluation date "${evaluationDate}" when applying recency decay.`,
     "Keep audit_reason concise, deterministic, and understandable to non-experts.",
+    "Prefer a single plain-English sentence for audit_reason and keep it under 180 characters whenever possible.",
     "Keep each safety_flags or highlights item to one short topic phrase, not a full sentence.",
     "Keep overall_summary to 2-3 plain-English sentences maximum.",
     "Do not mention rules by number in the output.",
@@ -101,6 +105,42 @@ function normalizeTopicPoints(points: string[]) {
       seen.add(normalized);
       return true;
     });
+}
+
+function truncateAtWordBoundary(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+
+  const truncated = normalized.slice(0, maxLength + 1);
+  const lastSentenceBoundary = Math.max(truncated.lastIndexOf(". "), truncated.lastIndexOf("; "));
+  if (lastSentenceBoundary >= Math.floor(maxLength * 0.6)) {
+    return truncated.slice(0, lastSentenceBoundary + 1).trim();
+  }
+
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace >= Math.floor(maxLength * 0.6)) {
+    return `${truncated.slice(0, lastSpace).trim()}...`;
+  }
+
+  return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
+function normalizeTrustEvalCandidate(candidate: unknown) {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return candidate;
+  }
+
+  const normalized = { ...(candidate as Record<string, unknown>) };
+
+  if (typeof normalized.audit_reason === "string") {
+    normalized.audit_reason = truncateAtWordBoundary(normalized.audit_reason, AUDIT_REASON_SCHEMA_MAX);
+  }
+
+  if (typeof normalized.overall_summary === "string") {
+    normalized.overall_summary = truncateAtWordBoundary(normalized.overall_summary, OVERALL_SUMMARY_FINAL_MAX);
+  }
+
+  return normalized;
 }
 
 export function buildGrayTrustSnapshot({
@@ -251,7 +291,7 @@ export async function evaluateTrustReviews({
       return buildUnavailableTrustSnapshot();
     }
 
-    const validated = TRUST_EVAL_OUTPUT_SCHEMA.safeParse(structuredContent);
+    const validated = TRUST_EVAL_OUTPUT_SCHEMA.safeParse(normalizeTrustEvalCandidate(structuredContent));
     if (!validated.success) {
       console.error("[trust-eval:zod] AI trust output failed schema validation.", {
         issues: validated.error.issues,
@@ -262,10 +302,10 @@ export async function evaluateTrustReviews({
 
     return {
       ...validated.data,
-      audit_reason: validated.data.audit_reason.trim(),
+      audit_reason: truncateAtWordBoundary(validated.data.audit_reason, AUDIT_REASON_FINAL_MAX),
       safety_flags: normalizeTopicPoints(validated.data.safety_flags),
       highlights: normalizeTopicPoints(validated.data.highlights),
-      overall_summary: validated.data.overall_summary.trim(),
+      overall_summary: truncateAtWordBoundary(validated.data.overall_summary, OVERALL_SUMMARY_FINAL_MAX),
     };
   } catch (error) {
     console.error("[trust-eval:unexpected] Unexpected trust evaluation failure.", {
