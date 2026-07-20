@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Info,
+  X,
   ShieldAlert,
   ShieldQuestion,
   Star,
@@ -34,13 +35,13 @@ const TRUST_BADGE_META: Record<
   }
 > = {
   GREEN: {
-    label: "Consistent Record",
+    label: "Consistent Quality Record",
     icon: CheckCircle2,
     shellClassName: "border-[#C4DFC8] bg-[#EEF8F0] text-[#26583A]",
     iconClassName: "text-[#2E8B57]",
   },
   YELLOW: {
-    label: "Caution / Mixed",
+    label: "Mixed Feedback / Caution",
     icon: AlertTriangle,
     shellClassName: "border-[#E7D18E] bg-[#FFF8DC] text-[#7A5A11]",
     iconClassName: "text-[#C28712]",
@@ -122,8 +123,8 @@ function SafetyScanInfoPopover() {
       <button
         type="button"
         onClick={() => setIsOpen((current) => !current)}
-        className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#D9C8A6] bg-white/90 text-[#7A5A19] shadow-sm transition hover:border-[#B98B2C] hover:text-[#5F4715] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B98B2C]/40"
-        aria-label="Explain PawFinder AI Safety Scan"
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#D9C8A6] bg-white/90 text-[#7A5A19] shadow-sm transition hover:border-[#B98B2C] hover:text-[#5F4715] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B98B2C]/40"
+        aria-label="Explain Provider Quality Assessment"
         aria-expanded={isOpen}
         aria-controls={popoverId}
         aria-haspopup="dialog"
@@ -132,26 +133,46 @@ function SafetyScanInfoPopover() {
       </button>
 
       {isOpen ? (
-        <div
-          id={popoverId}
-          role="dialog"
-          aria-label="How PawFinder AI Safety Scan Works"
-          className="absolute left-0 top-full z-20 mt-2 w-[min(21rem,calc(100vw-2.5rem))] rounded-2xl border border-[#E6D7B9] bg-[#FFFDF8] p-4 text-left shadow-[0_22px_50px_-26px_rgba(87,64,20,0.35)] sm:left-auto sm:right-0"
-        >
-          <p className="text-sm font-semibold text-[#4F3D17]">How PawFinder AI Safety Scan Works</p>
-          <p className="mt-2 text-sm leading-6 text-[#6A604F]">
-            Our AI scans raw customer reviews to flag safety concerns or service pattern issues.
-          </p>
-          <ul className="mt-3 space-y-2 text-sm leading-6 text-[#4E514B]">
-            <li>🟢 Green (Consistent Record): Clean history, high satisfaction, 0 safety flags.</li>
-            <li>🟡 Yellow (Caution / Mixed): Isolated complaint or mixed overall review sentiment.</li>
-            <li>
-              🔴 Red (Safety Warning): Critical issues reported (e.g., severe neglect, lost pets,
-              unlocked doors) or recurring service patterns.
-            </li>
-            <li>⚪ Gray (Insufficient Data): Fewer than 5 reviews available for scan.</li>
-          </ul>
-        </div>
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-[#2F312E]/28 backdrop-blur-[1px] sm:hidden"
+            onClick={() => setIsOpen(false)}
+            aria-hidden="true"
+          />
+
+          <div
+            id={popoverId}
+            role="dialog"
+            aria-label="How PawFinder AI Safety Scan Works"
+            className="fixed inset-x-4 bottom-4 z-50 rounded-[1.6rem] border border-[#E6D7B9] bg-[#FFFDF8] p-4 text-left shadow-[0_24px_60px_-28px_rgba(87,64,20,0.42)] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-[min(22rem,85vw)] sm:max-w-xs"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#4F3D17]">How PawFinder AI Safety Scan Works</p>
+                <p className="mt-2 text-sm leading-6 text-[#6A604F]">
+                  Our AI scans raw customer reviews to flag safety concerns or service pattern issues.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E6D7B9] bg-white text-[#7A5A19] shadow-sm transition hover:border-[#B98B2C] hover:text-[#5F4715] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B98B2C]/40 sm:hidden"
+                aria-label="Close quality assessment explanation"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#4E514B]">
+              <li>🟢 Green (Consistent Record): Clean history, high satisfaction, 0 safety flags.</li>
+              <li>🟡 Yellow (Caution / Mixed): Isolated complaint or mixed overall review sentiment.</li>
+              <li>
+                🔴 Red (Safety Warning): Critical issues reported (e.g., severe neglect, lost pets,
+                unlocked doors) or recurring service patterns.
+              </li>
+              <li>⚪ Gray (Insufficient Data): Fewer than 5 reviews available for scan.</li>
+            </ul>
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -199,7 +220,7 @@ export function ProviderTrustSummaryCard({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-[#4F3D17]">🤖 AI Safety Assessment</p>
+          <p className="text-sm font-semibold text-[#4F3D17]">🤖 Provider Quality Assessment</p>
           <SafetyScanInfoPopover />
         </div>
 
@@ -219,12 +240,12 @@ export default function TrustBadge({ trustBadge, className = "" }: TrustBadgePro
 
   return (
     <div
-      className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold shadow-[0_12px_28px_-24px_rgba(32,38,31,0.45)] ${meta.shellClassName} ${className}`.trim()}
+      className={`inline-flex max-w-full items-center gap-2 rounded-[1.1rem] border px-3 py-2 text-xs font-semibold shadow-[0_12px_28px_-24px_rgba(32,38,31,0.45)] sm:text-sm ${meta.shellClassName} ${className}`.trim()}
     >
       <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm">
         <Icon className={`h-4 w-4 ${meta.iconClassName}`} />
       </span>
-      <span className="min-w-0 truncate">{meta.label}</span>
+      <span className="min-w-0 whitespace-normal leading-5">{meta.label}</span>
     </div>
   );
 }
