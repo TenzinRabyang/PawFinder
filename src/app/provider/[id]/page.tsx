@@ -10,6 +10,7 @@ import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
   type ProviderContactActionType,
 } from '@/components/provider/ActionTriggerToast'
+import TrustBadge, { type TrustBadgeValue } from '@/components/ui/TrustBadge'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   type BreedAnalysisStatus,
@@ -54,6 +55,11 @@ type ProviderProfileRecord = {
   is_verified?: boolean | null
   review_summary?: string | null
   photo_reference?: string | null
+  trust_badge?: TrustBadgeValue | null
+  audit_reason?: string | null
+  safety_flags?: string[] | null
+  highlights?: string[] | null
+  ai_version?: number | null
   [key: string]: unknown
 }
 
@@ -108,6 +114,16 @@ type EnsureTagsResponse = {
   error?: string
 }
 
+type TrustSnapshotPayload = {
+  trust_badge: TrustBadgeValue
+  audit_reason: string
+  safety_flags: string[]
+  highlights: string[]
+  ai_version?: number | null
+  refreshed?: boolean
+  error?: string
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const GOOGLE_PLACE_ID_PATTERN = /^ChI[A-Za-z0-9_-]{10,}$/
@@ -154,6 +170,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
   const [shouldShowActionToast, setShouldShowActionToast] = useState(false)
   const [activeContactAction, setActiveContactAction] = useState<ProviderContactActionType | null>(null)
   const [showGalleryInfo, setShowGalleryInfo] = useState(false)
+  const [trustSnapshot, setTrustSnapshot] = useState<TrustSnapshotPayload | null>(null)
   const actionToastTimerRef = useRef<number | null>(null)
 
   // Review Form State
@@ -192,6 +209,27 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
       .split('_')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ')
+
+  const getSavedTrustSnapshot = (record: ProviderProfileRecord | null): TrustSnapshotPayload | null => {
+    if (
+      !record ||
+      !record.ai_version ||
+      record.ai_version < 2 ||
+      !record.trust_badge ||
+      !record.audit_reason
+    ) {
+      return null
+    }
+
+    return {
+      trust_badge: record.trust_badge,
+      audit_reason: record.audit_reason,
+      safety_flags: Array.isArray(record.safety_flags) ? record.safety_flags : [],
+      highlights: Array.isArray(record.highlights) ? record.highlights : [],
+      ai_version: record.ai_version,
+      refreshed: false,
+    }
+  }
 
   const getReviewAverage = (review: NativeReview) =>
     Number((((review.handling_rating || 0) + (review.environment_rating || 0)) / 2).toFixed(1))
@@ -647,6 +685,36 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
         liveDetailsSnapshot: !data.error ? data : canonicalCachedLiveDetails || undefined,
         reviewsSnapshot: dbProvider?.id ? resolvedReviews : [],
       })
+
+      const savedTrustSnapshot = getSavedTrustSnapshot(resolvedProvider)
+      if (savedTrustSnapshot) {
+        setTrustSnapshot(savedTrustSnapshot)
+      } else {
+        try {
+          const trustRes = await fetch(
+            `/api/providers/${encodeURIComponent(dbProvider?.id || id)}/trust-snapshot?place_id=${encodeURIComponent(
+              resolvedProvider.google_place_id || canonicalPlaceId
+            )}`,
+            { signal: AbortSignal.timeout(25000) }
+          )
+
+          if (trustRes.ok && trustRes.headers.get('content-type')?.includes('application/json')) {
+            const trustPayload = (await trustRes.json()) as TrustSnapshotPayload
+            if (!trustPayload.error) {
+              setTrustSnapshot({
+                trust_badge: trustPayload.trust_badge,
+                audit_reason: trustPayload.audit_reason,
+                safety_flags: Array.isArray(trustPayload.safety_flags) ? trustPayload.safety_flags : [],
+                highlights: Array.isArray(trustPayload.highlights) ? trustPayload.highlights : [],
+                ai_version: trustPayload.ai_version ?? null,
+                refreshed: Boolean(trustPayload.refreshed),
+              })
+            }
+          }
+        } catch {
+          console.error('Failed to load provider trust snapshot')
+        }
+      }
     } catch {
       console.error('Failed to load provider page data')
       setBreedTagStatus('unavailable')
@@ -827,6 +895,8 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
     : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
   const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
   const showTemperamentReviews = false
+  const shouldShowAuditSummary =
+    trustSnapshot?.trust_badge === 'YELLOW' || trustSnapshot?.trust_badge === 'RED'
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
@@ -872,6 +942,12 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                 <h1 className="font-display text-4xl font-bold tracking-[-0.03em] text-[#2F312E] sm:text-5xl">
                   {provider.name}
                 </h1>
+
+                {trustSnapshot ? (
+                  <div className="mt-5">
+                    <TrustBadge trustBadge={trustSnapshot.trust_badge} />
+                  </div>
+                ) : null}
               </div>
 
               <div className="pawfinder-fade-up-delay-1 mt-7 rounded-[1.75rem] border border-[#E4D4B0] bg-[linear-gradient(180deg,#FFF7E8_0%,#FFFDF8_100%)] p-5 shadow-[0_16px_38px_-30px_rgba(123,90,29,0.45)] sm:p-6">
@@ -952,6 +1028,48 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   {isOpenNow === true ? 'Open now' : isOpenNow === false ? 'Closed now' : 'Opening hours unavailable'}
                 </div>
               </div>
+
+              {trustSnapshot ? (
+                <div className="pawfinder-fade-up-delay-2 mt-6 space-y-4">
+                  {shouldShowAuditSummary ? (
+                    <div className="rounded-[1.5rem] border border-[#E2B2A7] bg-[#FDE9E5] p-5 shadow-[0_16px_36px_-30px_rgba(139,51,36,0.6)]">
+                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#8A2F22]">
+                        Audit Summary
+                      </p>
+                      <p className="mt-2 text-sm leading-7 text-[#8A2F22]">{trustSnapshot.audit_reason}</p>
+                      <div className="mt-4 space-y-2">
+                        {trustSnapshot.safety_flags.length > 0 ? (
+                          trustSnapshot.safety_flags.map((flag) => (
+                            <p
+                              key={flag}
+                              className="rounded-[0.95rem] border border-[#EDC4BA] bg-white/80 px-3 py-2 text-xs font-semibold leading-5 text-[#8A2F22]"
+                            >
+                              &quot;{flag}&quot;
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-xs text-[#8A2F22]/85">No direct safety quote snippets found.</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-[1.35rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4">
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#8A8176]">
+                      Positive Highlights
+                    </p>
+                    {trustSnapshot.highlights.length > 0 ? (
+                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-[#4E514B]">
+                        {trustSnapshot.highlights.map((highlight) => (
+                          <li key={highlight}>{highlight}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm text-[#6C6F68]">No highlights available yet.</p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="pawfinder-fade-up-delay-2 mt-8 grid gap-5 lg:grid-cols-2">
                 <div className="rounded-[1.75rem] border border-[#E5DBCF] bg-[#FFF8F2] p-5 shadow-[0_18px_40px_-34px_rgba(61,90,69,0.45)]">
