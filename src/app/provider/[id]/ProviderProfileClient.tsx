@@ -4,16 +4,13 @@ import Image from 'next/image'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Star, MapPin, CheckCircle, ShieldCheck, Copy, Check, Info } from 'lucide-react'
+import { Star, MapPin, CheckCircle, Copy, Check, Info } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
   type ProviderContactActionType,
 } from '@/components/provider/ActionTriggerToast'
-import {
-  ProviderTrustSummaryCard,
-  type TrustBadgeValue,
-} from '@/components/ui/TrustBadge'
+import TrustAndReviewsCard, { type TrustBadgeValue } from '@/components/ui/TrustAndReviewsCard'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   type BreedAnalysisStatus,
@@ -884,14 +881,6 @@ export default function ProviderProfile({
   const isVerifiedBusiness =
     provider.is_verified || provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium'
   const visibleAiSummary = provider.review_summary || liveDetails?.ai_summary || null
-  const visibleAiSummarySourceLabel = provider.review_summary
-    ? 'Based on verified PawFinder reviews'
-    : liveDetails?.ai_summary
-      ? 'Based on recent Google customer reviews'
-      : null
-  const visibleAiSummaryAccentClass = provider.review_summary
-    ? 'bg-[#3D5A45]/12 text-[#3D5A45]'
-    : 'bg-[#F3E3B7] text-[#7A5A19]'
   const websiteUrl = normalizeExternalUrl(provider.website)
   const hasOnlineBooking =
     typeof provider.has_online_booking === 'boolean' ? provider.has_online_booking : Boolean(provider.booking_url)
@@ -937,9 +926,6 @@ export default function ProviderProfile({
     : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
   const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
   const showTemperamentReviews = false
-  const shouldShowAuditSummary =
-    trustSnapshot?.trust_badge === 'YELLOW' || trustSnapshot?.trust_badge === 'RED'
-
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
       <div className="relative overflow-hidden">
@@ -986,47 +972,18 @@ export default function ProviderProfile({
                 </h1>
 
                 <div className="mt-5">
-                  <ProviderTrustSummaryCard
+                  <TrustAndReviewsCard
                     trustBadge={trustSnapshot?.trust_badge}
                     googleRating={headerGoogleRating}
                     googleReviewCount={headerGoogleReviewCount}
                     auditReason={trustSnapshot?.audit_reason}
                     safetyFlags={trustSnapshot?.safety_flags || []}
                     highlights={trustSnapshot?.highlights || []}
+                    reviewSummary={visibleAiSummary}
                     isLoading={isTrustSnapshotLoading}
                     hasError={hasTrustSnapshotError}
                   />
                 </div>
-              </div>
-
-              <div className="pawfinder-fade-up-delay-1 mt-6">
-                {visibleAiSummary ? (
-                  <div className="rounded-[1.5rem] border border-[#E4D6C0] bg-[#FFFDF8] p-5 shadow-[0_16px_36px_-30px_rgba(88,69,32,0.24)]">
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <div className="inline-flex items-center rounded-full bg-[#F3E3B7] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-[#7A5A19]">
-                        User Review Summary
-                      </div>
-                      <div className="inline-flex items-center gap-2 text-sm font-semibold text-[#4D5A50]">
-                        <ShieldCheck className="h-4 w-4 text-[#3D5A45]" />
-                        <span>{visibleAiSummarySourceLabel}</span>
-                      </div>
-                      {provider.review_summary && liveDetails?.ai_summary && (
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${visibleAiSummaryAccentClass}`}
-                        >
-                          Showing native summary first
-                        </span>
-                      )}
-                    </div>
-                    <p className="max-w-3xl text-[15px] leading-7 text-[#454541] sm:text-base">
-                      {visibleAiSummary}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-[1.5rem] border border-dashed border-[#DDCEB2] bg-[#FFFBF2] p-4 text-sm text-[#6E6A63]">
-                    We are still gathering enough review detail to show a short trust summary for this business.
-                  </div>
-                )}
               </div>
 
               <div className="pawfinder-fade-up-delay-2 mt-6 flex flex-wrap items-start gap-3 text-[#5D5B55]">
@@ -1046,48 +1003,6 @@ export default function ProviderProfile({
                   {isOpenNow === true ? 'Open now' : isOpenNow === false ? 'Closed now' : 'Opening hours unavailable'}
                 </div>
               </div>
-
-              {trustSnapshot ? (
-                <div className="pawfinder-fade-up-delay-2 mt-6 space-y-4">
-                  {shouldShowAuditSummary ? (
-                    <div className="rounded-[1.5rem] border border-[#E2B2A7] bg-[#FDE9E5] p-5 shadow-[0_16px_36px_-30px_rgba(139,51,36,0.6)]">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#8A2F22]">
-                        Audit Summary
-                      </p>
-                      <p className="mt-2 text-sm leading-7 text-[#8A2F22]">{trustSnapshot.audit_reason}</p>
-                      <div className="mt-4 space-y-2">
-                        {trustSnapshot.safety_flags.length > 0 ? (
-                          trustSnapshot.safety_flags.map((flag) => (
-                            <p
-                              key={flag}
-                              className="rounded-[0.95rem] border border-[#EDC4BA] bg-white/80 px-3 py-2 text-xs font-semibold leading-5 text-[#8A2F22]"
-                            >
-                              &quot;{flag}&quot;
-                            </p>
-                          ))
-                        ) : (
-                          <p className="text-xs text-[#8A2F22]/85">No direct safety quote snippets found.</p>
-                        )}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="rounded-[1.35rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4">
-                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-[#8A8176]">
-                      Positive Highlights
-                    </p>
-                    {trustSnapshot.highlights.length > 0 ? (
-                      <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-[#4E514B]">
-                        {trustSnapshot.highlights.map((highlight) => (
-                          <li key={highlight}>{highlight}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-sm text-[#6C6F68]">No highlights available yet.</p>
-                    )}
-                  </div>
-                </div>
-              ) : null}
 
               <div className="pawfinder-fade-up-delay-2 mt-8 grid gap-5 lg:grid-cols-2">
                 <div className="rounded-[1.75rem] border border-[#E5DBCF] bg-[#FFF8F2] p-5 shadow-[0_18px_40px_-34px_rgba(61,90,69,0.45)]">
@@ -1255,25 +1170,7 @@ export default function ProviderProfile({
             </div>
 
             <div className="pawfinder-fade-up-delay-2 w-full rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
-                <h3 className="font-display mb-4 flex items-center gap-2 text-lg font-bold text-[#344136]">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-xs font-black text-[#7A5A19] shadow-sm">
-                    G
-                  </span>
-                  Trust Snapshot
-                </h3>
-                <div className="rounded-[1.5rem] border border-[#E4D4B0] bg-[linear-gradient(180deg,#FFF3D9_0%,#FFF9EC_100%)] px-4 py-5 shadow-[0_18px_34px_-28px_rgba(123,90,29,0.8)]">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8A6D1F]/80">
-                    Google Rating
-                  </div>
-                  <div className="mt-2 text-4xl font-black text-[#7A5A19]">{liveDetails?.rating || 'N/A'}</div>
-                  <p className="mt-1 text-sm font-semibold text-[#8a6d1f]/80">
-                    {typeof liveDetails?.user_ratings_total === 'number'
-                      ? `${liveDetails.user_ratings_total} reviews live from Google Places`
-                      : 'Live from Google Places'}
-                  </p>
-                </div>
-
-                <div className="mt-6">
+                <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
                       Gallery
@@ -1327,7 +1224,7 @@ export default function ProviderProfile({
                     Profile Atmosphere
                   </div>
                   <p className="mt-2">
-                    PawFinder keeps live Google trust signals and saved breed and service analysis visually separate so pet owners can scan what is confirmed at a glance.
+                    PawFinder keeps the provider overview easy to scan so trust signals, services, and breed support all read as one clear profile.
                   </p>
                 </div>
             </div>
