@@ -195,9 +195,6 @@ export default async function Home() {
               <h2 className="mt-3 font-display text-[2rem] leading-tight tracking-[-0.03em] text-[#20261F] sm:text-[2.5rem]">
                 Choose the kind of help you actually need.
               </h2>
-              <p className="mt-4 text-base leading-7 text-[#4A5147]">
-                The homepage now leads with search, but these pathways still help orient first-time visitors toward the right type of care.
-              </p>
             </div>
 
             <div className="mt-8 grid gap-5 lg:grid-cols-3">
