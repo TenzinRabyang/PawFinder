@@ -22,6 +22,9 @@ type ProviderTrustSummaryCardProps = {
   trustBadge?: TrustBadgeValue | null;
   googleRating?: number | null;
   googleReviewCount?: number | null;
+  auditReason?: string | null;
+  safetyFlags?: string[];
+  highlights?: string[];
   className?: string;
 };
 
@@ -78,10 +81,33 @@ function RatingStars({ rating }: { rating?: number | null }) {
   );
 }
 
-function SafetyScanInfoPopover() {
+function SafetyScanInfoPopover({
+  trustBadge,
+  auditReason,
+  safetyFlags,
+  highlights,
+}: {
+  trustBadge?: TrustBadgeValue | null;
+  auditReason?: string | null;
+  safetyFlags: string[];
+  highlights: string[];
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const popoverId = useId();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const badgeMeta = trustBadge ? TRUST_BADGE_META[trustBadge] : null;
+  const BadgeIcon = badgeMeta?.icon;
+  const badgeEmoji =
+    trustBadge === "GREEN"
+      ? "🟢"
+      : trustBadge === "YELLOW"
+        ? "🟡"
+        : trustBadge === "RED"
+          ? "🔴"
+          : trustBadge === "GRAY"
+            ? "⚪"
+            : "";
+  const visibleTakeaways = Array.from(new Set([...safetyFlags, ...highlights].filter(Boolean)));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -143,14 +169,14 @@ function SafetyScanInfoPopover() {
           <div
             id={popoverId}
             role="dialog"
-            aria-label="How PawFinder AI Safety Scan Works"
+            aria-label="Quality Assessment Breakdown"
             className="fixed inset-x-4 bottom-4 z-50 rounded-[1.6rem] border border-[#E6D7B9] bg-[#FFFDF8] p-4 text-left shadow-[0_24px_60px_-28px_rgba(87,64,20,0.42)] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-[min(22rem,85vw)] sm:max-w-xs"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-[#4F3D17]">How PawFinder AI Safety Scan Works</p>
+                <p className="text-sm font-semibold text-[#4F3D17]">Quality Assessment Breakdown</p>
                 <p className="mt-2 text-sm leading-6 text-[#6A604F]">
-                  Our AI scans raw customer reviews to flag safety concerns or service pattern issues.
+                  This view uses the latest saved PawFinder trust snapshot already cached for this provider.
                 </p>
               </div>
               <button
@@ -162,15 +188,46 @@ function SafetyScanInfoPopover() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <ul className="mt-3 space-y-2 text-sm leading-6 text-[#4E514B]">
-              <li>🟢 Green (Consistent Record): Clean history, high satisfaction, 0 safety flags.</li>
-              <li>🟡 Yellow (Caution / Mixed): Isolated complaint or mixed overall review sentiment.</li>
-              <li>
-                🔴 Red (Safety Warning): Critical issues reported (e.g., severe neglect, lost pets,
-                unlocked doors) or recurring service patterns.
-              </li>
-              <li>⚪ Gray (Insufficient Data): Fewer than 5 reviews available for scan.</li>
-            </ul>
+
+            {badgeMeta && BadgeIcon ? (
+              <div
+                className={`mt-4 inline-flex max-w-full items-center gap-2 rounded-[1.1rem] border px-3 py-2 text-xs font-semibold sm:text-sm ${badgeMeta.shellClassName}`}
+              >
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 shadow-sm">
+                  <BadgeIcon className={`h-4 w-4 ${badgeMeta.iconClassName}`} />
+                </span>
+                <span className="whitespace-normal leading-5">{badgeEmoji} {trustBadge} - {badgeMeta.label}</span>
+              </div>
+            ) : (
+              <div className="mt-4 inline-flex rounded-full border border-[#D8D8D8] bg-[#F5F5F5] px-3 py-2 text-xs font-semibold text-[#505861] sm:text-sm">
+                Quality snapshot unavailable
+              </div>
+            )}
+
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8A6D32]">
+                Summary Rationale
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[#4E514B]">
+                {auditReason?.trim() || "Not enough saved assessment data is available yet."}
+              </p>
+            </div>
+
+            {visibleTakeaways.length > 0 ? (
+              <div className="mt-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8A6D32]">
+                  Key Takeaways
+                </p>
+                <ul className="mt-2 space-y-2 text-sm leading-6 text-[#4E514B]">
+                  {visibleTakeaways.map((point) => (
+                    <li key={point} className="flex gap-2">
+                      <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#B98B2C]" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -184,6 +241,9 @@ export function ProviderTrustSummaryCard({
   trustBadge,
   googleRating,
   googleReviewCount,
+  auditReason,
+  safetyFlags = [],
+  highlights = [],
   className = "",
 }: ProviderTrustSummaryCardProps) {
   const hasGoogleRating = typeof googleRating === "number" && Number.isFinite(googleRating);
@@ -221,7 +281,12 @@ export function ProviderTrustSummaryCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <p className="text-sm font-semibold text-[#4F3D17]">🤖 Provider Quality Assessment</p>
-          <SafetyScanInfoPopover />
+          <SafetyScanInfoPopover
+            trustBadge={trustBadge}
+            auditReason={auditReason}
+            safetyFlags={safetyFlags}
+            highlights={highlights}
+          />
         </div>
 
         {trustBadge ? (

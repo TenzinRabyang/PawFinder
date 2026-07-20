@@ -225,7 +225,7 @@ export async function GET(
     if (reviewTexts.length === 0) {
       const emptySnapshot: TrustEvalOutput = {
         trust_badge: "GRAY",
-        audit_reason: "Insufficient data (under 5 reviews)",
+        audit_reason: "There are not enough saved reviews yet for PawFinder to make a reliable quality assessment.",
         safety_flags: [],
         highlights: [],
       };

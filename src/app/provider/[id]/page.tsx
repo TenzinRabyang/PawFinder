@@ -970,6 +970,9 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     trustBadge={trustSnapshot?.trust_badge}
                     googleRating={headerGoogleRating}
                     googleReviewCount={headerGoogleReviewCount}
+                    auditReason={trustSnapshot?.audit_reason}
+                    safetyFlags={trustSnapshot?.safety_flags || []}
+                    highlights={trustSnapshot?.highlights || []}
                   />
                 </div>
               </div>
