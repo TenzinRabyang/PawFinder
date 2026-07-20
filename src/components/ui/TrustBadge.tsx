@@ -25,6 +25,8 @@ type ProviderTrustSummaryCardProps = {
   auditReason?: string | null;
   safetyFlags?: string[];
   highlights?: string[];
+  isLoading?: boolean;
+  hasError?: boolean;
   className?: string;
 };
 
@@ -112,6 +114,9 @@ function SafetyScanInfoPopover({
   useEffect(() => {
     if (!isOpen) return;
 
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const handlePointerDown = (event: MouseEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) {
         setIsOpen(false);
@@ -128,6 +133,7 @@ function SafetyScanInfoPopover({
     window.addEventListener("keydown", handleEscape);
 
     return () => {
+      document.body.style.overflow = previousOverflow;
       document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleEscape);
     };
@@ -137,8 +143,6 @@ function SafetyScanInfoPopover({
     <div
       ref={containerRef}
       className="relative"
-      onMouseEnter={() => setIsOpen(true)}
-      onMouseLeave={() => setIsOpen(false)}
       onFocus={() => setIsOpen(true)}
       onBlur={(event) => {
         if (!containerRef.current?.contains(event.relatedTarget as Node | null)) {
@@ -159,9 +163,9 @@ function SafetyScanInfoPopover({
       </button>
 
       {isOpen ? (
-        <>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="fixed inset-0 z-40 bg-[#2F312E]/28 backdrop-blur-[1px] sm:hidden"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setIsOpen(false)}
             aria-hidden="true"
           />
@@ -170,7 +174,7 @@ function SafetyScanInfoPopover({
             id={popoverId}
             role="dialog"
             aria-label="Quality Assessment Breakdown"
-            className="fixed inset-x-4 bottom-4 z-50 rounded-[1.6rem] border border-[#E6D7B9] bg-[#FFFDF8] p-4 text-left shadow-[0_24px_60px_-28px_rgba(87,64,20,0.42)] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-[min(22rem,85vw)] sm:max-w-xs"
+            className="relative z-10 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[1.6rem] border border-[#E6D7B9] bg-[#FFFDF8] p-4 text-left shadow-[0_24px_60px_-28px_rgba(87,64,20,0.42)]"
           >
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -182,7 +186,7 @@ function SafetyScanInfoPopover({
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E6D7B9] bg-white text-[#7A5A19] shadow-sm transition hover:border-[#B98B2C] hover:text-[#5F4715] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B98B2C]/40 sm:hidden"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E6D7B9] bg-white text-[#7A5A19] shadow-sm transition hover:border-[#B98B2C] hover:text-[#5F4715] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B98B2C]/40"
                 aria-label="Close quality assessment explanation"
               >
                 <X className="h-4 w-4" />
@@ -229,7 +233,7 @@ function SafetyScanInfoPopover({
               </div>
             ) : null}
           </div>
-        </>
+        </div>
       ) : null}
     </div>
   );
@@ -244,6 +248,8 @@ export function ProviderTrustSummaryCard({
   auditReason,
   safetyFlags = [],
   highlights = [],
+  isLoading = false,
+  hasError = false,
   className = "",
 }: ProviderTrustSummaryCardProps) {
   const hasGoogleRating = typeof googleRating === "number" && Number.isFinite(googleRating);
@@ -280,7 +286,7 @@ export function ProviderTrustSummaryCard({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-[#4F3D17]">🤖 Provider Quality Assessment</p>
+          <p className="text-sm font-semibold text-[#4F3D17]">Provider Quality Assessment</p>
           <SafetyScanInfoPopover
             trustBadge={trustBadge}
             auditReason={auditReason}
@@ -289,10 +295,17 @@ export function ProviderTrustSummaryCard({
           />
         </div>
 
-        {trustBadge ? (
+        {isLoading ? (
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#E7D8B8] bg-white/80 px-3 py-2 text-xs font-semibold text-[#7A5A19] animate-pulse sm:text-sm">
+            <span aria-hidden="true">🔄</span>
+            <span>Fetching quality assessment...</span>
+          </span>
+        ) : trustBadge ? (
           <TrustBadge trustBadge={trustBadge} />
-        ) : (
+        ) : hasError ? (
           <span className="text-sm font-medium text-[#8A8176]">Safety scan unavailable</span>
+        ) : (
+          <span className="text-sm font-medium text-[#8A8176]">Assessment pending</span>
         )}
       </div>
     </div>
