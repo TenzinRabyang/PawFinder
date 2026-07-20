@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-export const CURRENT_AI_VERSION = 3;
+export const CURRENT_AI_VERSION = 4;
 
 export const TRUST_EVAL_OUTPUT_SCHEMA = z.object({
-  trust_badge: z.enum(["GREEN", "YELLOW", "RED", "GRAY"]),
+  trust_badge: z.enum(["GREEN", "YELLOW", "RED", "GRAY", "UNAVAILABLE"]),
   audit_reason: z.string().min(1).max(240),
   safety_flags: z.array(z.string().min(1).max(140)).max(4).default([]),
   highlights: z.array(z.string().min(1).max(140)).max(4).default([]),
@@ -17,6 +17,12 @@ const DEFAULT_GRAY_AUDIT_REASON =
 
 const DEFAULT_GRAY_SUMMARY =
   "PawFinder could not complete a reliable trust analysis from the available review data, so this provider is shown with an insufficient-data assessment for now.";
+
+const DEFAULT_UNAVAILABLE_AUDIT_REASON =
+  "Quality assessment temporarily unavailable.";
+
+const DEFAULT_UNAVAILABLE_SUMMARY =
+  "PawFinder could not complete the provider quality assessment right now because the AI trust evaluation is temporarily unavailable.";
 
 type AiProviderConfig = {
   provider: "deepseek" | "openai";
@@ -50,15 +56,17 @@ function getAiProviderConfig(): AiProviderConfig {
   throw new Error("Missing DEEPSEEK_API_KEY or OPENAI_API_KEY.");
 }
 
-export function buildTrustEvaluationSystemPrompt(evaluationDate: string) {
+export function buildTrustEvaluationSystemPrompt(evaluationDate: string, userRatingsTotal: number) {
   return [
     "You are PawFinder's deterministic Trust & Safety evaluation engine.",
     "You must classify review sets using only the supplied review data and return JSON only.",
     "Your outputs will be stored in PawFinder's database and must remain compliant with Google Places API terms.",
     "You MUST assign the trust badge, audit_reason, safety_flags, highlights, and overall_summary in one single evaluation so they never contradict each other.",
+    `Note: This business has ${userRatingsTotal} total reviews on Google. You are evaluating a sample of the most recent reviews.`,
     "",
     "Strict badge rules:",
     'RULE 1 (Volume Filter): If total reviews < 5, trust_badge MUST be "GRAY".',
+    'RULE 1B (Sample Context): If Google total reviews are 5 or more, do not assign "GRAY" solely because the provided review sample is small. Only use "GRAY" when the supplied sample genuinely lacks enough information for a reliable conclusion.',
     'RULE 2 (Level 3 Critical Safety Issue): Any mention of theft, physical abuse, lost pet, unauthorized access, or unlocked door MUST result in an instant "RED" badge regardless of positive reviews.',
     'RULE 3 (Level 2 Service Pattern): If 2 or more reviews report severe service failures such as rushed visits under 5 minutes, missed feedings, or uncleaned litter boxes, trust_badge MUST be "RED".',
     'RULE 4 (Isolated Incident & Response): If only 1 minor or moderate complaint exists among 10+ positive reviews, or if the provider gave a reasonable response such as a traffic delay, the badge should be "GREEN" or "YELLOW" and the issue should be treated as isolated.',
@@ -111,6 +119,22 @@ export function buildGrayTrustSnapshot({
   };
 }
 
+export function buildUnavailableTrustSnapshot({
+  auditReason = DEFAULT_UNAVAILABLE_AUDIT_REASON,
+  overallSummary = DEFAULT_UNAVAILABLE_SUMMARY,
+}: {
+  auditReason?: string;
+  overallSummary?: string;
+} = {}): TrustEvalOutput {
+  return {
+    trust_badge: "UNAVAILABLE",
+    audit_reason: auditReason.trim(),
+    safety_flags: [],
+    highlights: [],
+    overall_summary: overallSummary.trim(),
+  };
+}
+
 export function sanitizeTrustReviewInputs(reviews: string[]) {
   return reviews
     .map((review) => (typeof review === "string" ? review.replace(/\s+/g, " ").trim() : ""))
@@ -119,9 +143,11 @@ export function sanitizeTrustReviewInputs(reviews: string[]) {
 
 export async function evaluateTrustReviews({
   reviews,
+  userRatingsTotal,
   evaluationDate = new Date().toISOString().slice(0, 10),
 }: {
   reviews: string[];
+  userRatingsTotal: number;
   evaluationDate?: string;
 }): Promise<TrustEvalOutput> {
   const sanitizedReviews = sanitizeTrustReviewInputs(reviews);
@@ -150,9 +176,10 @@ export async function evaluateTrustReviews({
         body: JSON.stringify({
           model: providerConfig.model,
           temperature: 0,
+          max_tokens: 1200,
           response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: buildTrustEvaluationSystemPrompt(evaluationDate) },
+            { role: "system", content: buildTrustEvaluationSystemPrompt(evaluationDate, userRatingsTotal) },
             {
               role: "user",
               content: JSON.stringify(
@@ -175,7 +202,7 @@ export async function evaluateTrustReviews({
         error: error instanceof Error ? error.message : String(error),
         review_count: sanitizedReviews.length,
       });
-      return buildGrayTrustSnapshot();
+      return buildUnavailableTrustSnapshot();
     }
 
     const rawBody = await response.text();
@@ -186,7 +213,7 @@ export async function evaluateTrustReviews({
         model: providerConfig.model,
         body_preview: rawBody.slice(0, 500),
       });
-      return buildGrayTrustSnapshot();
+      return buildUnavailableTrustSnapshot();
     }
 
     let parsedBody: {
@@ -201,7 +228,7 @@ export async function evaluateTrustReviews({
         error: error instanceof Error ? error.message : String(error),
         body_preview: rawBody.slice(0, 500),
       });
-      return buildGrayTrustSnapshot();
+      return buildUnavailableTrustSnapshot();
     }
 
     const content = parsedBody.choices?.[0]?.message?.content;
@@ -210,7 +237,7 @@ export async function evaluateTrustReviews({
       console.error("[trust-eval:response-content] AI trust evaluation returned no usable message content.", {
         body_preview: rawBody.slice(0, 500),
       });
-      return buildGrayTrustSnapshot();
+      return buildUnavailableTrustSnapshot();
     }
 
     let structuredContent: unknown;
@@ -221,7 +248,7 @@ export async function evaluateTrustReviews({
         error: error instanceof Error ? error.message : String(error),
         content_preview: content.slice(0, 500),
       });
-      return buildGrayTrustSnapshot();
+      return buildUnavailableTrustSnapshot();
     }
 
     const validated = TRUST_EVAL_OUTPUT_SCHEMA.safeParse(structuredContent);
@@ -230,7 +257,7 @@ export async function evaluateTrustReviews({
         issues: validated.error.issues,
         content_preview: content.slice(0, 500),
       });
-      return buildGrayTrustSnapshot();
+      return buildUnavailableTrustSnapshot();
     }
 
     return {
@@ -245,6 +272,6 @@ export async function evaluateTrustReviews({
       error: error instanceof Error ? error.message : String(error),
       review_count: sanitizedReviews.length,
     });
-    return buildGrayTrustSnapshot();
+    return buildUnavailableTrustSnapshot();
   }
 }

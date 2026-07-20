@@ -11,6 +11,7 @@ import ActionTriggerToast, {
   type ProviderContactActionType,
 } from '@/components/provider/ActionTriggerToast'
 import TrustAndReviewsCard, { type TrustBadgeValue } from '@/components/ui/TrustAndReviewsCard'
+import { CURRENT_AI_VERSION } from '@/lib/trust-eval'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   type BreedAnalysisStatus,
@@ -136,7 +137,7 @@ export type InitialTrustSnapshot = TrustSnapshotPayload
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const GOOGLE_PLACE_ID_PATTERN = /^ChI[A-Za-z0-9_-]{10,}$/
-const MIN_TRUST_AI_VERSION = 3
+const MIN_TRUST_AI_VERSION = CURRENT_AI_VERSION
 
 function isUuidLike(value: string) {
   return UUID_PATTERN.test(value.trim())
@@ -232,6 +233,7 @@ export default function ProviderProfile({
       !record.ai_version ||
       record.ai_version < MIN_TRUST_AI_VERSION ||
       !record.trust_badge ||
+      record.trust_badge === 'UNAVAILABLE' ||
       !record.audit_reason ||
       !record.overall_summary
     ) {

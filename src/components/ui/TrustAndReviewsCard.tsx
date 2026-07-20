@@ -3,7 +3,7 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, ShieldQuestion, Star } from "lucide-react";
 import { useMemo, useState } from "react";
 
-export type TrustBadgeValue = "GREEN" | "YELLOW" | "RED" | "GRAY";
+export type TrustBadgeValue = "GREEN" | "YELLOW" | "RED" | "GRAY" | "UNAVAILABLE";
 
 type TrustAndReviewsCardProps = {
   trustBadge?: TrustBadgeValue | null;
@@ -19,7 +19,7 @@ type TrustAndReviewsCardProps = {
 };
 
 const TRUST_BADGE_META: Record<
-  TrustBadgeValue,
+  Exclude<TrustBadgeValue, "UNAVAILABLE">,
   {
     label: string;
     emoji: string;
@@ -101,17 +101,23 @@ export default function TrustAndReviewsCard({
     () => Array.from(new Set((safetyFlags.length > 0 ? safetyFlags : highlights).filter(Boolean))),
     [highlights, safetyFlags]
   );
-  const badgeMeta = trustBadge ? TRUST_BADGE_META[trustBadge] : null;
+  const isUnavailable = trustBadge === "UNAVAILABLE";
+  const badgeMeta = trustBadge && trustBadge !== "UNAVAILABLE" ? TRUST_BADGE_META[trustBadge] : null;
   const BadgeIcon = badgeMeta?.icon;
   const rationale =
-    auditReason?.trim() ||
+    (isUnavailable
+      ? auditReason?.trim() || "Quality assessment temporarily unavailable."
+      : auditReason?.trim()) ||
     (hasError
       ? "We could not load the provider quality assessment right now."
       : isLoading
         ? "We are analyzing the latest provider record now."
         : "We are still gathering enough feedback to explain this provider clearly.");
   const expandedSummary =
-    overallSummary?.trim() ||
+    (isUnavailable
+      ? overallSummary?.trim() ||
+        "PawFinder could not complete the AI trust summary right now, so provider quality details are temporarily unavailable."
+      : overallSummary?.trim()) ||
     (hasError
       ? "Review summary is temporarily unavailable."
       : "We are still gathering enough review detail to show a broader summary for this business.");
@@ -143,6 +149,10 @@ export default function TrustAndReviewsCard({
           <div className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[#E7D8B8] bg-white/80 px-4 py-2 text-xs font-semibold text-[#7A5A19] animate-pulse sm:text-sm">
             <span aria-hidden="true">🔄</span>
             <span>Analyzing provider record...</span>
+          </div>
+        ) : isUnavailable ? (
+          <div className="text-sm font-semibold text-[#505861] sm:text-[0.95rem]">
+            Quality assessment temporarily unavailable
           </div>
         ) : badgeMeta && BadgeIcon ? (
           <div

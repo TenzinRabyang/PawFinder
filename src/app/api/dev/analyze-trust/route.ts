@@ -21,6 +21,7 @@ export async function POST(request: Request) {
 
     const validated = await evaluateTrustReviews({
       reviews: payload.data.reviews,
+      userRatingsTotal: payload.data.reviews.length,
       evaluationDate: "2026-07-19",
     });
 

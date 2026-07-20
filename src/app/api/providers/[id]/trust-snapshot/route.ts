@@ -6,6 +6,7 @@ import {
 } from "@/lib/provider-place-id-recovery";
 import {
   buildGrayTrustSnapshot,
+  buildUnavailableTrustSnapshot,
   CURRENT_AI_VERSION,
   evaluateTrustReviews,
   sanitizeTrustReviewInputs,
@@ -40,12 +41,11 @@ function normalizeStringArray(value: unknown) {
 }
 
 function buildRouteFallbackSnapshot(reason?: string): TrustEvalOutput {
-  return buildGrayTrustSnapshot({
+  return buildUnavailableTrustSnapshot({
     auditReason:
-      reason ||
-      "PawFinder could not complete the provider quality assessment right now, so this profile is shown with an insufficient-data result.",
+      reason || "Quality assessment temporarily unavailable.",
     overallSummary:
-      "PawFinder could not finish the trust analysis from the current upstream data, so this provider is temporarily shown with an insufficient-data assessment.",
+      "PawFinder could not finish the AI provider quality assessment right now, so the trust summary is temporarily unavailable.",
   });
 }
 
@@ -62,6 +62,7 @@ function getCachedTrustPayload(provider: ProviderTrustRecord): TrustEvalOutput |
     provider.ai_version &&
     provider.ai_version >= CURRENT_AI_VERSION &&
     typeof provider.trust_badge === "string" &&
+    provider.trust_badge !== "UNAVAILABLE" &&
     typeof provider.audit_reason === "string" &&
     typeof provider.overall_summary === "string"
   ) {
@@ -104,13 +105,18 @@ function formatNativeReview(review: NativeReviewRecord) {
 
 async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKey: string) {
   const placeId = provider.google_place_id?.trim();
-  if (!placeId) return [];
+  if (!placeId) {
+    return {
+      reviewTexts: [],
+      userRatingsTotal: null,
+    };
+  }
 
   try {
     const supabaseAdmin = createAdminClient();
     const resolvedDetails = await resolvePlaceDetailsWithAutoHeal({
       requestedPlaceId: placeId,
-      fields: "place_id,name,reviews",
+      fields: "place_id,name,reviews,user_ratings_total",
       googleApiKey,
       provider: await getProviderForPlaceIdRecovery(supabaseAdmin, placeId).then(({ data }) => data),
       supabase: supabaseAdmin,
@@ -124,12 +130,19 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
         status: resolvedDetails.status,
         error_message: "errorMessage" in resolvedDetails ? resolvedDetails.errorMessage ?? null : null,
       });
-      return [];
+      return {
+        reviewTexts: [],
+        userRatingsTotal: null,
+      };
     }
 
     const rawReviews = Array.isArray(resolvedDetails.result?.reviews)
       ? (resolvedDetails.result?.reviews as Array<Record<string, unknown>>)
       : [];
+    const userRatingsTotal =
+      typeof resolvedDetails.result?.user_ratings_total === "number"
+        ? resolvedDetails.result.user_ratings_total
+        : null;
 
     const mappedReviews = rawReviews
       .map((review, index) => {
@@ -157,19 +170,26 @@ async function fetchGoogleReviewTexts(provider: ProviderTrustRecord, googleApiKe
     console.info("[trust-snapshot:google-map] Sanitized Google reviews for trust evaluation.", {
       provider_id: provider.id,
       place_id: placeId,
+      user_ratings_total: userRatingsTotal,
       raw_count: rawReviews.length,
       mapped_count: mappedReviews.length,
       sanitized_count: sanitizedReviews.length,
     });
 
-    return sanitizedReviews;
+    return {
+      reviewTexts: sanitizedReviews,
+      userRatingsTotal,
+    };
   } catch (error) {
     console.error("[trust-snapshot:google-fetch] Failed to fetch or sanitize Google reviews.", {
       provider_id: provider.id,
       place_id: placeId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return [];
+    return {
+      reviewTexts: [],
+      userRatingsTotal: null,
+    };
   }
 }
 
@@ -332,7 +352,7 @@ export async function GET(
     }
 
     const googleApiKey = process.env.GOOGLE_PLACES_API_KEY;
-    const googleReviewTexts =
+    const googleReviewContext =
       googleApiKey && (provider?.google_place_id || resolvedPlaceId)
         ? await fetchGoogleReviewTexts(
             {
@@ -342,13 +362,22 @@ export async function GET(
             },
             googleApiKey
           )
-        : [];
+        : {
+            reviewTexts: [],
+            userRatingsTotal: null,
+          };
+    const googleReviewTexts = googleReviewContext.reviewTexts;
     const nativeReviewTexts = provider ? await fetchNativeReviewTexts(provider.id) : [];
     const reviewTexts = sanitizeTrustReviewInputs([...googleReviewTexts, ...nativeReviewTexts]);
+    const userRatingsTotal =
+      typeof googleReviewContext.userRatingsTotal === "number"
+        ? googleReviewContext.userRatingsTotal
+        : reviewTexts.length;
 
     console.info("[trust-snapshot:reviews] Prepared review inputs for trust evaluation.", {
       provider_id: provider?.id ?? null,
       resolved_place_id: resolvedPlaceId,
+      user_ratings_total: userRatingsTotal,
       google_count: googleReviewTexts.length,
       native_count: nativeReviewTexts.length,
       combined_count: reviewTexts.length,
@@ -413,7 +442,10 @@ export async function GET(
 
     let evaluated: TrustEvalOutput;
     try {
-      evaluated = await evaluateTrustReviews({ reviews: reviewTexts });
+      evaluated = await evaluateTrustReviews({
+        reviews: reviewTexts,
+        userRatingsTotal,
+      });
     } catch (error) {
       console.error("[trust-snapshot:ai-eval] Unexpected failure bubbled out of trust evaluation.", {
         provider_id: provider?.id ?? null,
@@ -424,7 +456,7 @@ export async function GET(
       evaluated = buildRouteFallbackSnapshot();
     }
 
-    if (provider) {
+    if (provider && evaluated.trust_badge !== "UNAVAILABLE") {
       try {
         const { error: updateError } = await supabaseAdmin
           .from("pf_providers")

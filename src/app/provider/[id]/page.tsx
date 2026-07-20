@@ -21,6 +21,7 @@ async function getInitialTrustSnapshot(id: string): Promise<InitialTrustSnapshot
   if (
     !data ||
     typeof data.trust_badge !== 'string' ||
+    data.trust_badge === 'UNAVAILABLE' ||
     typeof data.audit_reason !== 'string' ||
     typeof data.overall_summary !== 'string' ||
     typeof data.ai_version !== 'number' ||
