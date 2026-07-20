@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { getAnimalForBreed } from '@/lib/breed-taxonomy'
+import { applyNeedsBasedFilters, parseNeedsBasedSearchFilters } from '@/lib/provider-search-filters'
 import { inferServicesFromBusinessName } from '@/lib/provider-name-service-inference'
 
 type SearchCoords = {
@@ -182,10 +182,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const postcode = searchParams.get('postcode')
     const category = searchParams.get('category') || 'pet_care'
-    const animal = searchParams.get('animal')
-    const service = searchParams.get('service')
-    const breed = searchParams.get('breed')
     const forceRefresh = searchParams.get('forceRefresh') === 'true'
+    const searchFilters = parseNeedsBasedSearchFilters(searchParams)
 
     if (!postcode) {
       return NextResponse.json({ error: 'Postcode is required' }, { status: 400 })
@@ -267,60 +265,7 @@ export async function GET(request: Request) {
       }
     }
 
-    let finalResults = enrichedPlaces
-    if (animal || service || breed) {
-      const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
-      finalResults = enrichedPlaces.filter((provider: any) => {
-        const isUnclaimed =
-          provider.subscription_tier === 'free' &&
-          !provider.is_claimed &&
-          (!provider.animals_served || provider.animals_served.length === 0) &&
-          (!provider.services || provider.services.length === 0) &&
-          (!provider.breeds_specialised || provider.breeds_specialised.length === 0) &&
-          (!provider.breeds_general_inferred || provider.breeds_general_inferred.length === 0)
-
-        if (isUnclaimed) return true
-        if (animal && provider.animals_served?.length > 0 && !provider.animals_served.includes(animal)) return false
-        if (service && provider.services?.length > 0 && !provider.services.includes(service)) return false
-
-        if (breed) {
-          const matchesSpecificBreed = provider.breeds_specialised?.includes(breed)
-          const matchesGeneralCoverage =
-            inferredAnimalForBreed && provider.breeds_general_inferred?.includes(inferredAnimalForBreed)
-
-          if (provider.breeds_specialised?.length > 0 || provider.breeds_general_inferred?.length > 0) {
-            if (!matchesSpecificBreed && !matchesGeneralCoverage) {
-              return false
-            }
-          }
-        }
-
-        return true
-      })
-    }
-
-    const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
-    finalResults = finalResults.map((provider: any) => {
-      if (!breed || !inferredAnimalForBreed) {
-        return provider
-      }
-
-      if (provider.breeds_specialised?.includes(breed)) {
-        return { ...provider, breed_match_type: 'specific' }
-      }
-
-      if (provider.breeds_general_inferred?.includes(inferredAnimalForBreed)) {
-        return { ...provider, breed_match_type: 'general_inferred' }
-      }
-
-      return provider
-    })
-
-    finalResults = [...finalResults].sort((a: any, b: any) => {
-      const distanceA = typeof a.distance_miles === 'number' ? a.distance_miles : Number.POSITIVE_INFINITY
-      const distanceB = typeof b.distance_miles === 'number' ? b.distance_miles : Number.POSITIVE_INFINITY
-      return distanceA - distanceB
-    })
+    const finalResults = applyNeedsBasedFilters(enrichedPlaces, searchFilters)
 
     if (finalResults.length > 0) {
       finalResults[0] = {

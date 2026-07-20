@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { getAnimalForBreed } from '@/lib/breed-taxonomy'
+import { applyNeedsBasedFilters, parseNeedsBasedSearchFilters } from '@/lib/provider-search-filters'
 import { inferServicesFromBusinessName } from '@/lib/provider-name-service-inference'
 
 type SearchCoords = {
@@ -154,9 +154,7 @@ export async function GET(request: Request) {
   const lat = Number(searchParams.get('lat'))
   const lng = Number(searchParams.get('lng'))
   const category = searchParams.get('category') || 'pet_care'
-  const animal = searchParams.get('animal')
-  const service = searchParams.get('service')
-  const breed = searchParams.get('breed')
+  const searchFilters = parseNeedsBasedSearchFilters(searchParams)
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return NextResponse.json({ error: 'Valid lat/lng are required' }, { status: 400 })
@@ -166,35 +164,7 @@ export async function GET(request: Request) {
 
   try {
     const enrichedPlaces = await getEnrichedPlaces(supabase, { lat, lng }, category)
-
-    let finalResults = enrichedPlaces
-    if (animal || service || breed) {
-      const inferredAnimalForBreed = breed ? getAnimalForBreed(breed) : null
-      finalResults = enrichedPlaces.filter((provider: any) => {
-        const isUnclaimed =
-          provider.subscription_tier === 'free' &&
-          !provider.is_claimed &&
-          (!provider.animals_served || provider.animals_served.length === 0) &&
-          (!provider.services || provider.services.length === 0) &&
-          (!provider.breeds_specialised || provider.breeds_specialised.length === 0) &&
-          (!provider.breeds_general_inferred || provider.breeds_general_inferred.length === 0)
-
-        if (isUnclaimed) return true
-        if (animal && provider.animals_served?.length > 0 && !provider.animals_served.includes(animal)) return false
-        if (service && provider.services?.length > 0 && !provider.services.includes(service)) return false
-        if (breed) {
-          const hasBreedMatch = provider.breeds_specialised?.includes(breed)
-          const hasGeneralCoverageMatch =
-            inferredAnimalForBreed && provider.breeds_general_inferred?.includes(inferredAnimalForBreed)
-
-          if (!hasBreedMatch && !hasGeneralCoverageMatch) return false
-          if (hasGeneralCoverageMatch && !hasBreedMatch) {
-            provider.breed_match_type = 'general_inferred'
-          }
-        }
-        return true
-      })
-    }
+    const finalResults = applyNeedsBasedFilters(enrichedPlaces, searchFilters)
 
     return NextResponse.json({ pf_providers: finalResults })
   } catch (error: any) {
