@@ -13,6 +13,7 @@ import ActionTriggerToast, {
 import TrustAndReviewsCard, { type TrustBadgeValue } from '@/components/ui/TrustAndReviewsCard'
 import { CURRENT_AI_VERSION } from '@/lib/trust-eval'
 import { resolveProviderCategory } from '@/lib/provider-category'
+import { getSafePublicExternalUrl } from '@/lib/public-url'
 import {
   type BreedAnalysisStatus,
   getBreedAnalysisStatus,
@@ -199,13 +200,6 @@ export default function ProviderProfile({
     comment: '',
     temperament_tags: [] as string[]
   })
-
-  const normalizeExternalUrl = (url: string | null | undefined) => {
-    if (!url) return null
-    const trimmedUrl = url.trim()
-    if (!trimmedUrl) return null
-    return /^https?:\/\//i.test(trimmedUrl) ? trimmedUrl : `https://${trimmedUrl}`
-  }
 
   const getDisplayPhoneNumber = (phone: string | null | undefined) => {
     if (!phone) return null
@@ -888,10 +882,10 @@ export default function ProviderProfile({
 
   const isVerifiedBusiness =
     provider.is_verified || provider.subscription_tier === 'verified' || provider.subscription_tier === 'premium'
-  const websiteUrl = normalizeExternalUrl(provider.website)
+  const websiteUrl = getSafePublicExternalUrl(provider.website)
   const hasOnlineBooking =
     typeof provider.has_online_booking === 'boolean' ? provider.has_online_booking : Boolean(provider.booking_url)
-  const bookingUrl = hasOnlineBooking ? normalizeExternalUrl(provider.booking_url) : null
+  const bookingUrl = hasOnlineBooking ? getSafePublicExternalUrl(provider.booking_url) : null
   const callNumber = getDisplayPhoneNumber(provider.phone || liveDetails?.formatted_phone_number)
   const isOpenNow = liveDetails?.opening_hours?.open_now
   const livePhotos = liveDetails?.photos ?? []
@@ -1145,7 +1139,7 @@ export default function ProviderProfile({
                 <a
                   href={directionsUrl}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="pressable-soft inline-flex items-center justify-center gap-2 rounded-full border border-[#D6CCBD] bg-[#FFFDFC] px-6 py-3 text-center font-semibold text-[#344136] shadow-[0_14px_32px_-24px_rgba(61,90,69,0.35)] hover:bg-[#F7F0E7]"
                 >
                   <MapPin className="h-4 w-4" />
@@ -1155,7 +1149,7 @@ export default function ProviderProfile({
                   <a
                     href={websiteUrl}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     onClick={() => handleContactAction('website_click')}
                     className="pressable-soft rounded-full border border-[#D8C4A6] bg-[#FFF8ED] px-6 py-3 text-center font-semibold text-[#6A5121] shadow-[0_14px_32px_-24px_rgba(122,90,25,0.65)] hover:bg-[#FFF1D7]"
                   >
@@ -1166,7 +1160,7 @@ export default function ProviderProfile({
                   <a
                     href={bookingUrl}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     onClick={() => handleContactAction('booking_click')}
                     className="pressable-soft rounded-full border border-[#C97C5D]/20 bg-[#C97C5D] px-6 py-3 text-center font-semibold text-white shadow-[0_14px_32px_-24px_rgba(145,84,60,0.7)] hover:bg-[#B96E52]"
                   >
