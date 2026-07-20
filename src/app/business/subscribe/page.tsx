@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Check } from 'lucide-react'
+import { isAllowedStripeCheckoutUrl } from '@/lib/public-url'
 
 export default function SubscribePage() {
   const [loading, setLoading] = useState<string | null>(null)
@@ -15,12 +16,12 @@ export default function SubscribePage() {
         body: JSON.stringify({ tier })
       })
       const data = await res.json()
-      if (data.url) {
-        window.location.href = data.url
+      if (isAllowedStripeCheckoutUrl(data.url)) {
+        window.location.assign(data.url)
       } else {
-        alert(data.error || 'Checkout failed')
+        alert(data.error || 'Checkout redirect was invalid')
       }
-    } catch (err) {
+    } catch {
       alert('Error creating checkout session')
     }
     setLoading(null)

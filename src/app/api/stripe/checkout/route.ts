@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import Stripe from 'stripe'
+import { validateSameOriginRequest } from '@/lib/csrf'
 
 function createStripeClient() {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY
@@ -9,12 +10,15 @@ function createStripeClient() {
     return null
   }
 
-  return new Stripe(stripeSecretKey, {
-    apiVersion: '2025-01-27.acacia' as any,
-  })
+  return new Stripe(stripeSecretKey)
 }
 
 export async function POST(request: Request) {
+  const csrfError = validateSameOriginRequest(request)
+  if (csrfError) {
+    return NextResponse.json({ error: csrfError }, { status: 403 })
+  }
+
   const stripe = createStripeClient()
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

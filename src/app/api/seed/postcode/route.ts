@@ -29,6 +29,12 @@ async function getPlaceDetails(placeId: string) {
 
 export async function POST(request: Request) {
   try {
+    // This seeding route is intended for local development only. It should not
+    // be exposed on deployed environments where it can mutate production data.
+    if (process.env.VERCEL_ENV) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 

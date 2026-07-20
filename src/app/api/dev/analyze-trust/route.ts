@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { evaluateTrustReviews } from "@/lib/trust-eval";
+import {
+  calculateBaselineTrustBadge,
+  evaluateTrustReviews,
+} from "@/lib/trust-eval";
 
 const REQUEST_SCHEMA = z.object({
   reviews: z.array(z.string().min(1)).min(1),
+  rating: z.number().finite().min(0).max(5).optional(),
+  userRatingsTotal: z.number().int().nonnegative().optional(),
 });
 
 export async function POST(request: Request) {
@@ -19,8 +24,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid reviews payload." }, { status: 400 });
     }
 
+    const rating = payload.data.rating ?? 4.2;
+    const userRatingsTotal = payload.data.userRatingsTotal ?? payload.data.reviews.length;
+    const baselineBadge = calculateBaselineTrustBadge({
+      rating,
+      userRatingsTotal,
+    });
+
+    if (!baselineBadge || baselineBadge === "GRAY") {
+      return NextResponse.json(
+        {
+          error: "This dev endpoint requires enough aggregate review data to produce a non-GRAY baseline.",
+        },
+        { status: 400 }
+      );
+    }
+
     const validated = await evaluateTrustReviews({
       reviews: payload.data.reviews,
+      rating,
+      userRatingsTotal,
+      baselineBadge,
       evaluationDate: "2026-07-19",
     });
 

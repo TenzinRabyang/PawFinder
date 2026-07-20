@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { tagProviderWebsite, WebsiteFetchError } from '@/lib/provider-ai-tagging'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { validateSameOriginRequest } from '@/lib/csrf'
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { resolvePersistableProviderCategory } from '@/lib/provider-category'
 import {
@@ -39,6 +40,11 @@ function shouldRunWebsiteAnalysis(provider: {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = validateSameOriginRequest(request)
+    if (csrfError) {
+      return NextResponse.json({ error: csrfError }, { status: 403 })
+    }
+
     const supabase = await createClient()
     const supabaseAdmin = createAdminClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()

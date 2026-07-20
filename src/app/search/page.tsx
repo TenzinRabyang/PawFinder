@@ -107,6 +107,13 @@ function SearchContent() {
 
   const getErrorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
   const getErrorName = (error: unknown) => (error instanceof Error ? error.name : '')
+  const readJsonSafely = useCallback(async (response: Response) => {
+    try {
+      return (await response.json()) as Record<string, unknown>
+    } catch {
+      return {}
+    }
+  }, [])
 
   const fetchFeaturedEnrichment = useCallback(async (providerId: string) => {
     setFeaturedLoadStatus((prev) => ({ ...prev, [providerId]: 'loading' }))
@@ -115,7 +122,7 @@ function SearchContent() {
       const res = await fetch(`/api/providers/${encodeURIComponent(providerId)}/featured-enrichment`, {
         signal: AbortSignal.timeout(15000),
       })
-      const data = (await res.json()) as FeaturedEnrichmentResponse
+      const data = (await readJsonSafely(res)) as FeaturedEnrichmentResponse
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to load featured details')
@@ -160,10 +167,14 @@ function SearchContent() {
         : `/api/providers/search?${params.toString()}`
     try {
       const res = await fetch(requestUrl)
-      const data = await res.json()
+      const data = await readJsonSafely(res)
       
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to fetch providers')
+        throw new Error(
+          typeof data.error === 'string' && data.error
+            ? data.error
+            : 'Unable to load search results right now. Please try again.'
+        )
       }
       
       const providers = (data.pf_providers || []) as SearchProvider[]
@@ -180,7 +191,7 @@ function SearchContent() {
     } finally {
       setLoading(false)
     }
-  }, [RESULTS_PAGE_SIZE, filters, selectedLat, selectedLng, selectedLocationLabel])
+  }, [RESULTS_PAGE_SIZE, filters, readJsonSafely, selectedLat, selectedLng, selectedLocationLabel])
 
   useEffect(() => {
     // Automatically fetch providers when filters state updates from the URL

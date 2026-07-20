@@ -48,6 +48,8 @@ const MAX_CONTEXT_CHARS = 5000
 const MIN_CONTENT_CHARS = 200
 const PAGE_FETCH_TIMEOUT_MS = 5000
 const TOTAL_FETCH_BUDGET_MS = 12000
+const MAX_REDIRECTS = 3
+const ALLOWED_WEBSITE_PORTS = new Set(['', '80', '443'])
 const BOOKING_KEYWORD_REGEX =
   /\b(book|booking|bookings|appointment|appointments|schedule|reserve|reservation|consultation)\b/i
 const BOOKING_VENDOR_REGEX =
@@ -61,12 +63,92 @@ type WebsitePage = {
   text: string
 }
 
+function isPrivateIpv4Host(hostname: string) {
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return false
+
+  const octets = hostname.split('.').map((part) => Number(part))
+  if (octets.some((octet) => Number.isNaN(octet) || octet < 0 || octet > 255)) return true
+
+  const [a, b] = octets
+
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    a === 169 && b === 254 ||
+    a === 172 && b >= 16 && b <= 31 ||
+    a === 192 && b === 168
+  )
+}
+
+function isPrivateIpv6Host(hostname: string) {
+  const normalized = hostname.toLowerCase()
+
+  return (
+    normalized === '::1' ||
+    normalized === '::' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    normalized.startsWith('fe80:')
+  )
+}
+
+function isBlockedHostname(hostname: string) {
+  const normalized = hostname.trim().toLowerCase()
+
+  return (
+    !normalized ||
+    normalized === 'localhost' ||
+    normalized.endsWith('.localhost') ||
+    normalized === 'host.docker.internal' ||
+    normalized.endsWith('.local') ||
+    normalized.endsWith('.internal') ||
+    normalized === 'metadata' ||
+    normalized === 'metadata.google.internal' ||
+    normalized === '169.254.169.254' ||
+    isPrivateIpv4Host(normalized) ||
+    isPrivateIpv6Host(normalized)
+  )
+}
+
+function assertSafeWebsiteUrl(url: URL) {
+  if (!['http:', 'https:'].includes(url.protocol)) {
+    throw new WebsiteFetchError('Website URL protocol is not allowed', {
+      url: url.toString(),
+      reason: 'fetch_blocked',
+    })
+  }
+
+  if (url.username || url.password) {
+    throw new WebsiteFetchError('Website URL credentials are not allowed', {
+      url: url.toString(),
+      reason: 'fetch_blocked',
+    })
+  }
+
+  if (!ALLOWED_WEBSITE_PORTS.has(url.port)) {
+    throw new WebsiteFetchError('Website URL port is not allowed', {
+      url: url.toString(),
+      reason: 'fetch_blocked',
+    })
+  }
+
+  if (isBlockedHostname(url.hostname)) {
+    throw new WebsiteFetchError('Website host is not allowed', {
+      url: url.toString(),
+      reason: 'fetch_blocked',
+    })
+  }
+}
+
 function normalizeWebsiteUrl(url: string) {
   const trimmedUrl = url.trim()
   if (!trimmedUrl) return null
 
   try {
-    return new URL(/^https?:\/\//i.test(trimmedUrl) ? trimmedUrl : `https://${trimmedUrl}`)
+    const normalizedUrl = new URL(/^https?:\/\//i.test(trimmedUrl) ? trimmedUrl : `https://${trimmedUrl}`)
+    assertSafeWebsiteUrl(normalizedUrl)
+    return normalizedUrl
   } catch {
     return null
   }
@@ -116,7 +198,7 @@ function extractBookingLink(html: string, baseUrl: URL) {
 
     try {
       const url = new URL(href, baseUrl)
-      if (!['http:', 'https:'].includes(url.protocol)) continue
+      assertSafeWebsiteUrl(url)
 
       const anchorText = stripHtmlToText(match[2] || '')
       const score = scoreBookingCandidate(url, anchorText)
@@ -243,6 +325,7 @@ function extractRelevantLinks(html: string, baseUrl: URL) {
 
     try {
       const url = new URL(href, baseUrl)
+      assertSafeWebsiteUrl(url)
       const sameOrigin = url.origin === baseUrl.origin
       const relevantPath = RELEVANT_SUBPAGE_REGEX.test(url.pathname)
 
@@ -261,31 +344,71 @@ function extractRelevantLinks(html: string, baseUrl: URL) {
 }
 
 async function fetchPageText(url: string, timeoutMs: number) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'en-GB,en;q=0.9',
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(timeoutMs),
-  })
+  let currentUrl: URL
 
-  if (!response.ok) {
-    throw new WebsiteFetchError(`Failed to fetch ${url}: ${response.status}`, {
+  try {
+    currentUrl = new URL(url)
+    assertSafeWebsiteUrl(currentUrl)
+  } catch (error) {
+    if (error instanceof WebsiteFetchError) {
+      throw error
+    }
+
+    throw new WebsiteFetchError(`Invalid website URL: ${url}`, {
       url,
-      status: response.status,
-      reason: response.status >= 400 && response.status < 500 ? 'fetch_blocked' : 'fetch_failed',
+      reason: 'fetch_blocked',
     })
   }
 
-  const html = await response.text()
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    const response = await fetch(currentUrl.toString(), {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.9',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs),
+    })
 
-  return {
-    html,
-    text: stripHtmlToText(html),
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location')
+
+      if (!location) {
+        throw new WebsiteFetchError(`Redirect response missing location for ${currentUrl.toString()}`, {
+          url: currentUrl.toString(),
+          status: response.status,
+          reason: 'fetch_blocked',
+        })
+      }
+
+      const redirectedUrl = new URL(location, currentUrl)
+      assertSafeWebsiteUrl(redirectedUrl)
+      currentUrl = redirectedUrl
+      continue
+    }
+
+    if (!response.ok) {
+      throw new WebsiteFetchError(`Failed to fetch ${currentUrl.toString()}: ${response.status}`, {
+        url: currentUrl.toString(),
+        status: response.status,
+        reason: response.status >= 400 && response.status < 500 ? 'fetch_blocked' : 'fetch_failed',
+      })
+    }
+
+    const html = await response.text()
+
+    return {
+      html,
+      text: stripHtmlToText(html),
+    }
   }
+
+  throw new WebsiteFetchError(`Too many redirects while fetching ${url}`, {
+    url,
+    reason: 'fetch_blocked',
+  })
 }
 
 async function collectWebsiteContext(website: string) {

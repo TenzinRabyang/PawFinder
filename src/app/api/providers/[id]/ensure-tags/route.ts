@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { tagProviderWebsite, WebsiteFetchError } from '@/lib/provider-ai-tagging'
 import { resolveProviderCategory, resolvePersistableProviderCategory } from '@/lib/provider-category'
 import { createAdminClient } from '@/utils/supabase/admin'
+import { createClient } from '@/utils/supabase/server'
+import { validateSameOriginRequest } from '@/lib/csrf'
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { inferAnimalsFromProviderPhotos } from '@/lib/provider-photo-inference'
 import {
@@ -55,6 +57,10 @@ type EnsureTagsBody = {
     types?: string[]
     photos?: Array<Record<string, unknown>>
   } | null
+}
+
+type OwnerProfile = {
+  owned_provider_id: string | null
 }
 
 function serializeProviderForClient(provider: Record<string, unknown> | null | undefined) {
@@ -156,8 +162,14 @@ function mergeUniqueValues(...values: Array<string[] | null | undefined>) {
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const csrfError = validateSameOriginRequest(request)
+    if (csrfError) {
+      return NextResponse.json({ error: csrfError }, { status: 403 })
+    }
+
     const { id } = await params
     const supabaseAdmin = createAdminClient()
+    const supabase = await createClient()
     const body = (await request.json().catch(() => ({}))) as EnsureTagsBody
     const googleApiKey = process.env.GOOGLE_PLACES_API_KEY
 
@@ -268,40 +280,43 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const ephemeralProvider = buildEphemeralProvider(canonicalPlaceId, providerSeed)
     const analysisSourceProvider = () => provider ?? ephemeralProvider
 
-  if (!provider) {
-    const resolvedCategory = resolvePersistableProviderCategory({
-      requestedCategory: body.category,
-      googleTypes: providerSeed.googleTypes,
-      name: providerSeed.name,
-      website: providerSeed.website,
-    })
-    if (resolvedCategory) {
-      const providerShell = {
-        google_place_id: canonicalPlaceId,
-        name: providerSeed.name || 'Unknown Provider',
-        address: providerSeed.address || null,
-        postcode: derivePostcode(providerSeed.address),
-        category: resolvedCategory,
-        website: providerSeed.website || null,
-        phone: providerSeed.phone || null,
-        is_claimed: false,
-        subscription_tier: 'free',
-      }
-
-      const { data: createdProvider, error: createError } = await supabaseAdmin
-        .from('pf_providers')
-        .upsert(providerShell, { onConflict: 'google_place_id' })
-        .select('*')
-        .single()
-
-      if (createError) {
-        return NextResponse.json({ error: createError.message }, { status: 500 })
-      }
-
-      provider = createdProvider
-      // Future cleanup consideration: unclaimed, exhausted rows with no reviews can be pruned periodically.
+    if (!provider) {
+      return NextResponse.json(
+        { error: 'Provider analysis refresh requires an existing claimed provider.' },
+        { status: 404 }
+      )
     }
-  }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({
+        provider: serializeProviderForClient(provider),
+        source: 'database',
+        analysis_status: getBreedAnalysisStatus(provider),
+        access_mode: 'read_only',
+      })
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('pf_profiles')
+      .select('owned_provider_id')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    const ownerProfile = (profile as OwnerProfile | null) || null
+
+    if (profileError || ownerProfile?.owned_provider_id !== provider.id) {
+      return NextResponse.json({
+        provider: serializeProviderForClient(provider),
+        source: 'database',
+        analysis_status: getBreedAnalysisStatus(provider),
+        access_mode: 'read_only',
+      })
+    }
 
   const providerName = providerSeed.name || provider?.name || ephemeralProvider.name
   const providerCategory = provider?.category || ephemeralProvider.category
@@ -606,51 +621,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         services: normalizedConfirmedServices,
       }) || provider?.category
 
-    if (!provider && !resolvedGeneratedCategory) {
-      return NextResponse.json({
-        provider: serializeProviderForClient({
-          ...ephemeralProvider,
-          website: normalizedWebsite,
-          animals_served: aiTags.animals_served,
-          services: normalizedConfirmedServices,
-          services_inferred_from_name: inferredServicesFromName,
-          breeds_specialised: aiTags.breeds_specialised,
-          breeds_general_inferred: aiTags.breeds_general_inferred,
-          ai_tagging_skipped_low_content: skippedLowContent,
-        }),
-        source: 'generated',
-        analysis_status: 'category_unresolved',
-        pages_analysed: pagesAnalysed,
-        pages_attempted: pagesAttempted,
-        pages_fetched: pagesFetched,
-        ai_tagging_skipped_low_content: skippedLowContent,
-      })
-    }
-
-    if (!provider) {
-      const providerShell = {
-        google_place_id: canonicalPlaceId,
-        name: providerName || 'Unknown Provider',
-        address: providerSeed.address || null,
-        postcode: derivePostcode(providerSeed.address),
-        category: resolvedGeneratedCategory!,
-        website: normalizedWebsite,
-        phone: providerSeed.phone || null,
-        is_claimed: false,
-        subscription_tier: 'free',
-      }
-
-      const { data: createdProvider, error: createError } = await supabaseAdmin
-        .from('pf_providers')
-        .upsert(providerShell, { onConflict: 'google_place_id' })
-        .select('*')
-        .single()
-
-      if (createError) {
-        return NextResponse.json({ error: createError.message }, { status: 500 })
-      }
-
-      provider = createdProvider
+    if (!resolvedGeneratedCategory) {
+      return NextResponse.json(
+        { error: 'Unable to determine a valid provider category for analysis refresh' },
+        { status: 400 }
+      )
     }
 
     const aiTaggedAt = new Date().toISOString()
