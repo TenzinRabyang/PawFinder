@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadEnvConfig } from "@next/env";
 import { z } from "zod";
 
 const OUTPUT_SCHEMA = z.object({
@@ -48,10 +49,18 @@ type EvalResult = z.infer<typeof OUTPUT_SCHEMA>;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "..");
 const FIXTURE_PATH = path.resolve(__dirname, "../tests/fixtures/review-scenarios.json");
-const MODEL_NAME = "deepseek-chat";
-const API_URL = "https://api.deepseek.com/v1/chat/completions";
 const EVALUATION_DATE = "2026-07-19";
+
+loadEnvConfig(PROJECT_ROOT);
+
+type AiProviderConfig = {
+  provider: "deepseek" | "openai";
+  apiKey: string;
+  model: string;
+  apiUrl: string;
+};
 
 function buildSystemPrompt() {
   return [
@@ -108,21 +117,49 @@ async function loadFixtures() {
   return FIXTURE_SCHEMA.parse(JSON.parse(raw));
 }
 
-async function evaluateScenario(scenario: Scenario): Promise<EvalResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+function getAiProviderConfig(): AiProviderConfig {
+  const deepseekApiKey = process.env.DEEPSEEK_API_KEY?.trim();
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
 
-  if (!apiKey) {
-    throw new Error("Missing DEEPSEEK_API_KEY environment variable.");
+  if (deepseekApiKey) {
+    return {
+      provider: "deepseek",
+      apiKey: deepseekApiKey,
+      model: "deepseek-chat",
+      apiUrl: "https://api.deepseek.com/v1/chat/completions",
+    };
   }
 
-  const response = await fetch(API_URL, {
+  if (openAiApiKey) {
+    return {
+      provider: "openai",
+      apiKey: openAiApiKey,
+      model: "gpt-4o-mini",
+      apiUrl: "https://api.openai.com/v1/chat/completions",
+    };
+  }
+
+  throw new Error(
+    [
+      "No AI API key found for the evaluation runner.",
+      "Add one of the following to .env.local in the project root:",
+      "  DEEPSEEK_API_KEY=your_deepseek_key_here",
+      "  OPENAI_API_KEY=your_openai_key_here",
+    ].join("\n")
+  );
+}
+
+async function evaluateScenario(scenario: Scenario): Promise<EvalResult> {
+  const providerConfig = getAiProviderConfig();
+
+  const response = await fetch(providerConfig.apiUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${providerConfig.apiKey}`,
     },
     body: JSON.stringify({
-      model: MODEL_NAME,
+      model: providerConfig.model,
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
@@ -135,7 +172,9 @@ async function evaluateScenario(scenario: Scenario): Promise<EvalResult> {
 
   const rawBody = await response.text();
   if (!response.ok) {
-    throw new Error(`DeepSeek evaluation failed (${response.status}): ${rawBody}`);
+    throw new Error(
+      `${providerConfig.provider} evaluation failed (${response.status}) using model ${providerConfig.model}: ${rawBody}`
+    );
   }
 
   const parsedBody = JSON.parse(rawBody) as {
@@ -195,10 +234,12 @@ function formatDiagnostics(result: EvalResult, scenario: Scenario) {
 
 async function main() {
   const fixture = await loadFixtures();
+  const providerConfig = getAiProviderConfig();
   let passCount = 0;
 
   console.log(`Running trust evaluation scenarios from ${path.relative(process.cwd(), FIXTURE_PATH)}`);
-  console.log(`Model: ${MODEL_NAME}`);
+  console.log(`Provider: ${providerConfig.provider}`);
+  console.log(`Model: ${providerConfig.model}`);
   console.log("");
 
   for (const scenario of fixture.scenarios) {
