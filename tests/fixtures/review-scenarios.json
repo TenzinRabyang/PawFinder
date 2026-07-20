@@ -1,0 +1,734 @@
+{
+  "schema_version": 1,
+  "generated_for": "PawFinder Trust & Safety Evaluation Engine",
+  "description": "Deterministic ground-truth review scenarios for trust badge evaluation runner tests.",
+  "scenarios": [
+    {
+      "scenario_id": "clean_sitter",
+      "description": "High volume of positive reviews, zero complaints.",
+      "input_reviews": [
+        {
+          "review_id": "clean_sitter_r1",
+          "date": "2026-06-14",
+          "rating": 5,
+          "author": "Amelia T.",
+          "text": "Our sitter was punctual, calm with our nervous spaniel, and sent thoughtful photo updates after every visit. The house was spotless when we got back."
+        },
+        {
+          "review_id": "clean_sitter_r2",
+          "date": "2026-05-29",
+          "rating": 5,
+          "author": "James P.",
+          "text": "Brilliant care from start to finish. Arrived exactly on time, followed feeding instructions perfectly, and our Labrador clearly adored them."
+        },
+        {
+          "review_id": "clean_sitter_r3",
+          "date": "2026-05-08",
+          "rating": 5,
+          "author": "Sofia W.",
+          "text": "We received clear updates morning and evening, including walks, meals, and medication notes. Reliable, kind, and very professional."
+        },
+        {
+          "review_id": "clean_sitter_r4",
+          "date": "2026-04-21",
+          "rating": 5,
+          "author": "Rory C.",
+          "text": "Our elderly cat needs patience and routine, and this sitter handled both beautifully. They were prompt every day and kept us fully informed."
+        },
+        {
+          "review_id": "clean_sitter_r5",
+          "date": "2026-04-10",
+          "rating": 5,
+          "author": "Leah D.",
+          "text": "Fantastic service. The sitter was warm, organised, and sent enough updates that we could actually relax on holiday."
+        },
+        {
+          "review_id": "clean_sitter_r6",
+          "date": "2026-03-26",
+          "rating": 5,
+          "author": "Connor H.",
+          "text": "Very dependable and caring. They turned up on time for every visit, walked our dog properly, and left water bowls freshly topped up."
+        },
+        {
+          "review_id": "clean_sitter_r7",
+          "date": "2026-03-11",
+          "rating": 5,
+          "author": "Priya N.",
+          "text": "I appreciated the consistent communication and the attention to detail. The sitter noticed our puppy was a little unsettled and adjusted the routine gently."
+        },
+        {
+          "review_id": "clean_sitter_r8",
+          "date": "2026-02-24",
+          "rating": 5,
+          "author": "Ethan B.",
+          "text": "Absolutely trustworthy. Great with our rescue dog, very reassuring updates, and everything in the home was exactly as we left it."
+        },
+        {
+          "review_id": "clean_sitter_r9",
+          "date": "2026-02-05",
+          "rating": 5,
+          "author": "Maya L.",
+          "text": "Could not ask for better care. The sitter was punctual, thoughtful, and sent lovely photos after each walk and feeding visit."
+        },
+        {
+          "review_id": "clean_sitter_r10",
+          "date": "2026-01-19",
+          "rating": 5,
+          "author": "Oliver F.",
+          "text": "Our two cats were calm and happy when we returned. Excellent communication, no issues at all, and a very professional handover."
+        },
+        {
+          "review_id": "clean_sitter_r11",
+          "date": "2025-12-17",
+          "rating": 5,
+          "author": "Hannah S.",
+          "text": "The sitter followed every instruction, kept to schedule, and clearly cared about the pets rather than just completing the booking."
+        },
+        {
+          "review_id": "clean_sitter_r12",
+          "date": "2025-11-28",
+          "rating": 5,
+          "author": "Ben K.",
+          "text": "Reliable, kind, and excellent at giving updates. Our dog had a brilliant week and we felt fully confident throughout."
+        }
+      ],
+      "expected_output": {
+        "expected_badge": "GREEN",
+        "expected_flags_count": 0
+      }
+    },
+    {
+      "scenario_id": "fake_reviews_with_theft",
+      "description": "15 glowing fake 5-star reviews hiding 1 critical theft allegation.",
+      "input_reviews": [
+        {
+          "review_id": "fake_reviews_with_theft_r1",
+          "date": "2026-06-10",
+          "rating": 5,
+          "author": "User 01",
+          "text": "Amazing sitter. Highly recommend."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r2",
+          "date": "2026-06-08",
+          "rating": 5,
+          "author": "User 02",
+          "text": "So helpful and friendly."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r3",
+          "date": "2026-06-05",
+          "rating": 5,
+          "author": "User 03",
+          "text": "Great service every time."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r4",
+          "date": "2026-06-02",
+          "rating": 5,
+          "author": "User 04",
+          "text": "Perfect sitter, five stars."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r5",
+          "date": "2026-05-30",
+          "rating": 5,
+          "author": "User 05",
+          "text": "Wonderful care. Thank you."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r6",
+          "date": "2026-05-27",
+          "rating": 5,
+          "author": "User 06",
+          "text": "Brilliant and reliable."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r7",
+          "date": "2026-05-25",
+          "rating": 5,
+          "author": "User 07",
+          "text": "Excellent experience."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r8",
+          "date": "2026-05-22",
+          "rating": 5,
+          "author": "User 08",
+          "text": "Could not be happier."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r9",
+          "date": "2026-05-19",
+          "rating": 5,
+          "author": "User 09",
+          "text": "Top quality pet care."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r10",
+          "date": "2026-05-17",
+          "rating": 5,
+          "author": "User 10",
+          "text": "Five star service."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r11",
+          "date": "2026-05-14",
+          "rating": 5,
+          "author": "User 11",
+          "text": "Lovely sitter."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r12",
+          "date": "2026-05-12",
+          "rating": 5,
+          "author": "User 12",
+          "text": "Very professional."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r13",
+          "date": "2026-05-10",
+          "rating": 5,
+          "author": "User 13",
+          "text": "Great updates and care."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r14",
+          "date": "2026-05-08",
+          "rating": 5,
+          "author": "User 14",
+          "text": "Absolutely brilliant."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r15",
+          "date": "2026-05-06",
+          "rating": 5,
+          "author": "User 15",
+          "text": "Would book again."
+        },
+        {
+          "review_id": "fake_reviews_with_theft_r16",
+          "date": "2026-04-28",
+          "rating": 1,
+          "author": "Rachel M.",
+          "text": "Caught sitter going through drawers and taking cash on security camera. I ended the booking immediately and reported it."
+        }
+      ],
+      "expected_output": {
+        "expected_badge": "RED",
+        "expected_severity": "Level 3 Critical Safety Issue",
+        "expected_flag_substring": "going through drawers and taking cash"
+      }
+    },
+    {
+      "scenario_id": "isolated_outlier_complaint",
+      "description": "25 positive reviews with 1 minor late arrival complaint where the sitter responded professionally.",
+      "input_reviews": [
+        {
+          "review_id": "isolated_outlier_complaint_r1",
+          "date": "2026-06-18",
+          "rating": 5,
+          "author": "Client 01",
+          "text": "Warm, punctual, and very attentive with our dog."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r2",
+          "date": "2026-06-14",
+          "rating": 5,
+          "author": "Client 02",
+          "text": "Clear updates and great communication throughout."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r3",
+          "date": "2026-06-10",
+          "rating": 5,
+          "author": "Client 03",
+          "text": "Our cat was calm and happy when we returned."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r4",
+          "date": "2026-06-06",
+          "rating": 5,
+          "author": "Client 04",
+          "text": "Professional and dependable every single visit."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r5",
+          "date": "2026-06-02",
+          "rating": 5,
+          "author": "Client 05",
+          "text": "Lovely daily messages and excellent care."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r6",
+          "date": "2026-05-28",
+          "rating": 5,
+          "author": "Client 06",
+          "text": "Reliable and trustworthy sitter."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r7",
+          "date": "2026-05-24",
+          "rating": 5,
+          "author": "Client 07",
+          "text": "Followed all instructions perfectly."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r8",
+          "date": "2026-05-20",
+          "rating": 5,
+          "author": "Client 08",
+          "text": "Fantastic with our anxious rescue dog."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r9",
+          "date": "2026-05-16",
+          "rating": 5,
+          "author": "Client 09",
+          "text": "House left tidy and pets very settled."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r10",
+          "date": "2026-05-12",
+          "rating": 5,
+          "author": "Client 10",
+          "text": "Great walker and excellent communication."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r11",
+          "date": "2026-05-08",
+          "rating": 5,
+          "author": "Client 11",
+          "text": "Very caring and clearly experienced."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r12",
+          "date": "2026-05-04",
+          "rating": 5,
+          "author": "Client 12",
+          "text": "Sent updates exactly when promised."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r13",
+          "date": "2026-04-30",
+          "rating": 5,
+          "author": "Client 13",
+          "text": "Everything ran smoothly from booking to return."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r14",
+          "date": "2026-04-26",
+          "rating": 5,
+          "author": "Client 14",
+          "text": "Great with medication and routine care."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r15",
+          "date": "2026-04-22",
+          "rating": 5,
+          "author": "Client 15",
+          "text": "Prompt and reassuring from start to finish."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r16",
+          "date": "2026-04-18",
+          "rating": 5,
+          "author": "Client 16",
+          "text": "Excellent sitter, would use again without hesitation."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r17",
+          "date": "2026-04-14",
+          "rating": 5,
+          "author": "Client 17",
+          "text": "Consistently kind, punctual, and organised."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r18",
+          "date": "2026-04-10",
+          "rating": 5,
+          "author": "Client 18",
+          "text": "A very professional service with great updates."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r19",
+          "date": "2026-04-06",
+          "rating": 5,
+          "author": "Client 19",
+          "text": "Pets were relaxed and clearly well cared for."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r20",
+          "date": "2026-04-02",
+          "rating": 5,
+          "author": "Client 20",
+          "text": "Very responsive and easy to work with."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r21",
+          "date": "2026-03-29",
+          "rating": 5,
+          "author": "Client 21",
+          "text": "Our puppy loved them from the first meet and greet."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r22",
+          "date": "2026-03-25",
+          "rating": 5,
+          "author": "Client 22",
+          "text": "Excellent communication and dependable visits."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r23",
+          "date": "2026-03-21",
+          "rating": 5,
+          "author": "Client 23",
+          "text": "Very caring and attentive with our senior cat."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r24",
+          "date": "2026-03-17",
+          "rating": 5,
+          "author": "Client 24",
+          "text": "Always on schedule and sent lots of photos."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r25",
+          "date": "2026-03-13",
+          "rating": 5,
+          "author": "Client 25",
+          "text": "One of the best sitter experiences we have had."
+        },
+        {
+          "review_id": "isolated_outlier_complaint_r26",
+          "date": "2026-03-11",
+          "rating": 3,
+          "author": "Nina G.",
+          "text": "Sitter was 20 minutes late on Tuesday.",
+          "business_response": "Notified owner in advance due to accident on M1."
+        }
+      ],
+      "expected_output": {
+        "expected_badge": "GREEN",
+        "expected_flags_count": 0
+      }
+    },
+    {
+      "scenario_id": "pattern_of_neglect",
+      "description": "Moderate number of reviews showing a recurring pattern of rushed visits.",
+      "input_reviews": [
+        {
+          "review_id": "pattern_of_neglect_r1",
+          "date": "2026-06-12",
+          "rating": 5,
+          "author": "Owner 01",
+          "text": "Friendly sitter and decent communication."
+        },
+        {
+          "review_id": "pattern_of_neglect_r2",
+          "date": "2026-05-29",
+          "rating": 2,
+          "author": "Owner 02",
+          "text": "Visit logs showed the sitter stayed under 5 minutes and left before our dog had even settled."
+        },
+        {
+          "review_id": "pattern_of_neglect_r3",
+          "date": "2026-05-10",
+          "rating": 5,
+          "author": "Owner 03",
+          "text": "No major problems during our weekend away."
+        },
+        {
+          "review_id": "pattern_of_neglect_r4",
+          "date": "2026-04-22",
+          "rating": 2,
+          "author": "Owner 04",
+          "text": "Returned home to find the litter box left dirty even though daily cleaning was part of the booking."
+        },
+        {
+          "review_id": "pattern_of_neglect_r5",
+          "date": "2026-04-05",
+          "rating": 4,
+          "author": "Owner 05",
+          "text": "Nice enough in person, but communication was brief."
+        },
+        {
+          "review_id": "pattern_of_neglect_r6",
+          "date": "2026-03-19",
+          "rating": 1,
+          "author": "Owner 06",
+          "text": "Food bowl untouched after a booked feeding visit and no explanation given."
+        },
+        {
+          "review_id": "pattern_of_neglect_r7",
+          "date": "2026-02-28",
+          "rating": 5,
+          "author": "Owner 07",
+          "text": "Our rabbit was calm when we got home."
+        },
+        {
+          "review_id": "pattern_of_neglect_r8",
+          "date": "2026-02-14",
+          "rating": 4,
+          "author": "Owner 08",
+          "text": "Booking was easy enough, but I would have liked more updates."
+        }
+      ],
+      "expected_output": {
+        "expected_badge": "RED",
+        "expected_severity": "Level 2 Service Pattern"
+      }
+    },
+    {
+      "scenario_id": "new_sitter_low_volume",
+      "description": "Only 2 reviews present in total.",
+      "input_reviews": [
+        {
+          "review_id": "new_sitter_low_volume_r1",
+          "date": "2026-06-07",
+          "rating": 5,
+          "author": "Early Client 01",
+          "text": "Great first experience, very kind and communicative."
+        },
+        {
+          "review_id": "new_sitter_low_volume_r2",
+          "date": "2026-05-31",
+          "rating": 5,
+          "author": "Early Client 02",
+          "text": "Lovely care for our cat and excellent updates."
+        }
+      ],
+      "expected_output": {
+        "expected_badge": "GRAY",
+        "reason": "Insufficient data (under 5 reviews)"
+      }
+    },
+    {
+      "scenario_id": "old_resolved_complaint",
+      "description": "30 recent 5-star reviews over the past 12 months, with 1 negative review from 4 years ago.",
+      "input_reviews": [
+        {
+          "review_id": "old_resolved_complaint_r1",
+          "date": "2026-06-18",
+          "rating": 5,
+          "author": "Recent 01",
+          "text": "Dependable, calm, and excellent with our dog."
+        },
+        {
+          "review_id": "old_resolved_complaint_r2",
+          "date": "2026-06-10",
+          "rating": 5,
+          "author": "Recent 02",
+          "text": "Great communication before and during the booking."
+        },
+        {
+          "review_id": "old_resolved_complaint_r3",
+          "date": "2026-06-01",
+          "rating": 5,
+          "author": "Recent 03",
+          "text": "Very attentive to medication instructions."
+        },
+        {
+          "review_id": "old_resolved_complaint_r4",
+          "date": "2026-05-24",
+          "rating": 5,
+          "author": "Recent 04",
+          "text": "Our pets were happy and relaxed when we came back."
+        },
+        {
+          "review_id": "old_resolved_complaint_r5",
+          "date": "2026-05-16",
+          "rating": 5,
+          "author": "Recent 05",
+          "text": "Punctual and very organised from start to finish."
+        },
+        {
+          "review_id": "old_resolved_complaint_r6",
+          "date": "2026-05-08",
+          "rating": 5,
+          "author": "Recent 06",
+          "text": "The updates were detailed and reassuring."
+        },
+        {
+          "review_id": "old_resolved_complaint_r7",
+          "date": "2026-04-30",
+          "rating": 5,
+          "author": "Recent 07",
+          "text": "Could not ask for more professional care."
+        },
+        {
+          "review_id": "old_resolved_complaint_r8",
+          "date": "2026-04-22",
+          "rating": 5,
+          "author": "Recent 08",
+          "text": "Our rescue dog settled quickly with them."
+        },
+        {
+          "review_id": "old_resolved_complaint_r9",
+          "date": "2026-04-14",
+          "rating": 5,
+          "author": "Recent 09",
+          "text": "Excellent walker and very reliable."
+        },
+        {
+          "review_id": "old_resolved_complaint_r10",
+          "date": "2026-04-06",
+          "rating": 5,
+          "author": "Recent 10",
+          "text": "Left the house tidy and followed every instruction."
+        },
+        {
+          "review_id": "old_resolved_complaint_r11",
+          "date": "2026-03-29",
+          "rating": 5,
+          "author": "Recent 11",
+          "text": "Very patient with our senior cat."
+        },
+        {
+          "review_id": "old_resolved_complaint_r12",
+          "date": "2026-03-21",
+          "rating": 5,
+          "author": "Recent 12",
+          "text": "Booking was seamless and updates were prompt."
+        },
+        {
+          "review_id": "old_resolved_complaint_r13",
+          "date": "2026-03-13",
+          "rating": 5,
+          "author": "Recent 13",
+          "text": "Warm, professional, and trustworthy."
+        },
+        {
+          "review_id": "old_resolved_complaint_r14",
+          "date": "2026-03-05",
+          "rating": 5,
+          "author": "Recent 14",
+          "text": "Fantastic sitter with brilliant communication."
+        },
+        {
+          "review_id": "old_resolved_complaint_r15",
+          "date": "2026-02-26",
+          "rating": 5,
+          "author": "Recent 15",
+          "text": "Very caring and punctual every day."
+        },
+        {
+          "review_id": "old_resolved_complaint_r16",
+          "date": "2026-02-18",
+          "rating": 5,
+          "author": "Recent 16",
+          "text": "Our Labrador clearly loved the walks."
+        },
+        {
+          "review_id": "old_resolved_complaint_r17",
+          "date": "2026-02-10",
+          "rating": 5,
+          "author": "Recent 17",
+          "text": "Very responsive whenever we had questions."
+        },
+        {
+          "review_id": "old_resolved_complaint_r18",
+          "date": "2026-02-02",
+          "rating": 5,
+          "author": "Recent 18",
+          "text": "Everything was done exactly as requested."
+        },
+        {
+          "review_id": "old_resolved_complaint_r19",
+          "date": "2026-01-25",
+          "rating": 5,
+          "author": "Recent 19",
+          "text": "A calm, confident sitter who sent excellent updates."
+        },
+        {
+          "review_id": "old_resolved_complaint_r20",
+          "date": "2026-01-17",
+          "rating": 5,
+          "author": "Recent 20",
+          "text": "Our pets were extremely well looked after."
+        },
+        {
+          "review_id": "old_resolved_complaint_r21",
+          "date": "2026-01-09",
+          "rating": 5,
+          "author": "Recent 21",
+          "text": "Fantastic routine care and loads of reassurance."
+        },
+        {
+          "review_id": "old_resolved_complaint_r22",
+          "date": "2025-12-20",
+          "rating": 5,
+          "author": "Recent 22",
+          "text": "Very dependable over the holiday period."
+        },
+        {
+          "review_id": "old_resolved_complaint_r23",
+          "date": "2025-12-05",
+          "rating": 5,
+          "author": "Recent 23",
+          "text": "Great communication and excellent pet handling."
+        },
+        {
+          "review_id": "old_resolved_complaint_r24",
+          "date": "2025-11-22",
+          "rating": 5,
+          "author": "Recent 24",
+          "text": "Everything was smooth and professional."
+        },
+        {
+          "review_id": "old_resolved_complaint_r25",
+          "date": "2025-11-08",
+          "rating": 5,
+          "author": "Recent 25",
+          "text": "Very reassuring for first-time pet owners."
+        },
+        {
+          "review_id": "old_resolved_complaint_r26",
+          "date": "2025-10-26",
+          "rating": 5,
+          "author": "Recent 26",
+          "text": "Would absolutely book again."
+        },
+        {
+          "review_id": "old_resolved_complaint_r27",
+          "date": "2025-10-14",
+          "rating": 5,
+          "author": "Recent 27",
+          "text": "Great sitter for our two cats and one rabbit."
+        },
+        {
+          "review_id": "old_resolved_complaint_r28",
+          "date": "2025-09-30",
+          "rating": 5,
+          "author": "Recent 28",
+          "text": "Professional, punctual, and very kind."
+        },
+        {
+          "review_id": "old_resolved_complaint_r29",
+          "date": "2025-09-12",
+          "rating": 5,
+          "author": "Recent 29",
+          "text": "We got photo updates after every single visit."
+        },
+        {
+          "review_id": "old_resolved_complaint_r30",
+          "date": "2025-08-27",
+          "rating": 5,
+          "author": "Recent 30",
+          "text": "Excellent experience, no concerns at all."
+        },
+        {
+          "review_id": "old_resolved_complaint_r31",
+          "date": "2022-07-11",
+          "rating": 2,
+          "author": "Older Client",
+          "text": "Communication was poor and replies were slow back then."
+        }
+      ],
+      "expected_output": {
+        "expected_badge": "GREEN",
+        "reason": "Recency decay applied to old complaint"
+      }
+    }
+  ]
+}
