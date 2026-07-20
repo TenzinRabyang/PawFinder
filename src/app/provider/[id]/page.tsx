@@ -10,7 +10,10 @@ import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
   type ProviderContactActionType,
 } from '@/components/provider/ActionTriggerToast'
-import TrustBadge, { type TrustBadgeValue } from '@/components/ui/TrustBadge'
+import {
+  ProviderTrustSummaryCard,
+  type TrustBadgeValue,
+} from '@/components/ui/TrustBadge'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import {
   type BreedAnalysisStatus,
@@ -943,47 +946,20 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                   {provider.name}
                 </h1>
 
-                {trustSnapshot ? (
+                {trustSnapshot || typeof liveDetails?.rating === 'number' || typeof liveDetails?.user_ratings_total === 'number' ? (
                   <div className="mt-5">
-                    <TrustBadge trustBadge={trustSnapshot.trust_badge} />
+                    <ProviderTrustSummaryCard
+                      trustBadge={trustSnapshot?.trust_badge}
+                      googleRating={liveDetails?.rating}
+                      googleReviewCount={liveDetails?.user_ratings_total}
+                    />
                   </div>
                 ) : null}
               </div>
 
-              <div className="pawfinder-fade-up-delay-1 mt-7 rounded-[1.75rem] border border-[#E4D4B0] bg-[linear-gradient(180deg,#FFF7E8_0%,#FFFDF8_100%)] p-5 shadow-[0_16px_38px_-30px_rgba(123,90,29,0.45)] sm:p-6">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="collar-tag collar-tag-large">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-sm font-black text-[#6A5121] shadow-sm">
-                      G
-                    </span>
-                    <div className="leading-tight">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8E6A20]/75">
-                        Google Rating
-                      </div>
-                      <div className="mt-1 flex items-baseline gap-2">
-                        <span className="text-2xl font-black sm:text-[2rem]">
-                          {liveDetails?.rating ? `${liveDetails.rating}` : 'N/A'}
-                        </span>
-                        <span className="text-sm font-semibold text-[#8E6A20]/80">/ 5</span>
-                      </div>
-                      <div className="mt-2">
-                        {renderFilledStars(liveDetails?.rating, {
-                          sizeClassName: 'h-4 w-4',
-                          filledClassName: 'fill-amber-400 text-amber-400',
-                          emptyClassName: 'text-[#D9C8A6]',
-                        })}
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
-                      {typeof liveDetails?.user_ratings_total === 'number'
-                        ? `${liveDetails.user_ratings_total} reviews`
-                        : 'Live'}
-                    </span>
-                  </div>
-                </div>
-
+              <div className="pawfinder-fade-up-delay-1 mt-6">
                 {visibleAiSummary ? (
-                  <div className="mt-5 rounded-[1.5rem] border border-[#E4D6C0] bg-[#FFFDF8] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)]">
+                  <div className="rounded-[1.5rem] border border-[#E4D6C0] bg-[#FFFDF8] p-5 shadow-[0_16px_36px_-30px_rgba(88,69,32,0.24)]">
                     <div className="mb-3 flex flex-wrap items-center gap-2">
                       <div className="inline-flex items-center rounded-full bg-[#F3E3B7] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-[#7A5A19]">
                         User Review Summary
@@ -1005,7 +981,7 @@ export default function ProviderProfile({ params }: { params: Promise<{ id: stri
                     </p>
                   </div>
                 ) : (
-                  <div className="mt-5 rounded-[1.5rem] border border-dashed border-[#DDCEB2] bg-[#FFFBF2] p-4 text-sm text-[#6E6A63]">
+                  <div className="rounded-[1.5rem] border border-dashed border-[#DDCEB2] bg-[#FFFBF2] p-4 text-sm text-[#6E6A63]">
                     We are still gathering enough review detail to show a short trust summary for this business.
                   </div>
                 )}
