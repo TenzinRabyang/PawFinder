@@ -4,12 +4,13 @@ export const CURRENT_AI_VERSION = 5;
 const AUDIT_REASON_SCHEMA_MAX = 360;
 const AUDIT_REASON_FINAL_MAX = 280;
 const OVERALL_SUMMARY_FINAL_MAX = 420;
+const MAX_TOPIC_POINTS = 4;
 
 export const TRUST_EVAL_OUTPUT_SCHEMA = z.object({
   trust_badge: z.enum(["GREEN", "YELLOW", "RED", "GRAY", "UNAVAILABLE"]),
   audit_reason: z.string().min(1).max(AUDIT_REASON_SCHEMA_MAX),
-  safety_flags: z.array(z.string().min(1).max(140)).max(4).default([]),
-  highlights: z.array(z.string().min(1).max(140)).max(4).default([]),
+  safety_flags: z.array(z.string().min(1).max(140)).max(MAX_TOPIC_POINTS).default([]),
+  highlights: z.array(z.string().min(1).max(140)).max(MAX_TOPIC_POINTS).default([]),
   overall_summary: z.string().min(1).max(420),
 });
 
@@ -226,6 +227,7 @@ export function buildHybridTrustEvaluationSystemPrompt({
     "Complaints older than 2 years carry minimal weight unless they are critical safety issues.",
     "Never copy or quote raw review wording. Use only synthetic summaries.",
     "safety_flags and highlights must be short paraphrased topic phrases, not full sentences.",
+    `Return at most ${MAX_TOPIC_POINTS} safety_flags and at most ${MAX_TOPIC_POINTS} highlights.`,
     "audit_reason must be a short plain-English explanation for the final badge.",
     "overall_summary must align with the final trust_badge and audit_reason.",
     'If trust_badge is "RED", overall_summary must lead with the critical safety or severe systemic issue.',
@@ -285,6 +287,18 @@ function normalizeTrustEvalCandidate(candidate: unknown) {
 
   if (typeof normalized.overall_summary === "string") {
     normalized.overall_summary = truncateAtWordBoundary(normalized.overall_summary, OVERALL_SUMMARY_FINAL_MAX);
+  }
+
+  if (Array.isArray(normalized.safety_flags)) {
+    normalized.safety_flags = normalizeTopicPoints(
+      normalized.safety_flags.filter((item): item is string => typeof item === "string")
+    ).slice(0, MAX_TOPIC_POINTS);
+  }
+
+  if (Array.isArray(normalized.highlights)) {
+    normalized.highlights = normalizeTopicPoints(
+      normalized.highlights.filter((item): item is string => typeof item === "string")
+    ).slice(0, MAX_TOPIC_POINTS);
   }
 
   return normalized;
@@ -475,8 +489,8 @@ export async function evaluateTrustReviews({
       ...validated.data,
       trust_badge: trustBadge,
       audit_reason: truncateAtWordBoundary(validated.data.audit_reason, AUDIT_REASON_FINAL_MAX),
-      safety_flags: normalizeTopicPoints(validated.data.safety_flags),
-      highlights: normalizeTopicPoints(validated.data.highlights),
+      safety_flags: normalizeTopicPoints(validated.data.safety_flags).slice(0, MAX_TOPIC_POINTS),
+      highlights: normalizeTopicPoints(validated.data.highlights).slice(0, MAX_TOPIC_POINTS),
       overall_summary: truncateAtWordBoundary(validated.data.overall_summary, OVERALL_SUMMARY_FINAL_MAX),
     };
   } catch (error) {
