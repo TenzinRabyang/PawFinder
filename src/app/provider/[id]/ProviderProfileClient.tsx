@@ -861,6 +861,17 @@ export default function ProviderProfile({
     }
   }, [])
 
+  const visibleGoogleReviews = (liveDetails?.reviews ?? []).slice(0, 5)
+
+  useEffect(() => {
+    if (visibleGoogleReviews.length === 0) {
+      setActiveGoogleReviewIndex(0)
+      return
+    }
+
+    setActiveGoogleReviewIndex((current) => Math.min(current, visibleGoogleReviews.length - 1))
+  }, [visibleGoogleReviews.length])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#FAF9F6] px-4 py-12 sm:px-6 sm:py-16">
@@ -905,8 +916,6 @@ export default function ProviderProfile({
       : typeof provider.google_rating?.count === 'number'
         ? provider.google_rating.count
         : null
-  const liveReviews = liveDetails?.reviews ?? []
-  const visibleGoogleReviews = liveReviews.slice(0, 5)
   const hasGoogleReviews = visibleGoogleReviews.length > 0
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
@@ -929,15 +938,6 @@ export default function ProviderProfile({
     : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
   const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
   const showTemperamentReviews = false
-
-  useEffect(() => {
-    if (visibleGoogleReviews.length === 0) {
-      setActiveGoogleReviewIndex(0)
-      return
-    }
-
-    setActiveGoogleReviewIndex((current) => Math.min(current, visibleGoogleReviews.length - 1))
-  }, [visibleGoogleReviews.length])
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
