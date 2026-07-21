@@ -1252,7 +1252,7 @@ export default function ProviderProfile({
                       ) : null}
                     </div>
 
-                    <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,0.9fr)]">
+                    <div className="mt-5">
                       <div className="rounded-[1.6rem] border border-[#E7DDD1] bg-[#FFFDFC] p-5 shadow-[0_16px_36px_-30px_rgba(60,48,35,0.22)]">
                         {visibleGoogleReviews[activeGoogleReviewIndex] ? (
                           <>
@@ -1265,15 +1265,20 @@ export default function ProviderProfile({
                                   {visibleGoogleReviews[activeGoogleReviewIndex].relative_time_description || 'Recent'}
                                 </div>
                               </div>
-                              <div className="collar-tag collar-tag-small text-sm font-semibold">
-                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
-                                  G
+                              <div className="flex items-center gap-3">
+                                <span className="rounded-full bg-[#FBF3E3] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
+                                  {activeGoogleReviewIndex + 1}/{visibleGoogleReviews.length}
                                 </span>
-                                {renderFilledStars(visibleGoogleReviews[activeGoogleReviewIndex].rating, {
-                                  sizeClassName: 'h-3.5 w-3.5',
-                                  filledClassName: 'fill-amber-400 text-amber-400',
-                                  emptyClassName: 'text-[#D9C8A6]',
-                                })}
+                                <div className="collar-tag collar-tag-small text-sm font-semibold">
+                                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
+                                    G
+                                  </span>
+                                  {renderFilledStars(visibleGoogleReviews[activeGoogleReviewIndex].rating, {
+                                    sizeClassName: 'h-3.5 w-3.5',
+                                    filledClassName: 'fill-amber-400 text-amber-400',
+                                    emptyClassName: 'text-[#D9C8A6]',
+                                  })}
+                                </div>
                               </div>
                             </div>
                             <p className="mt-4 text-sm leading-7 text-[#5D5A54]">
@@ -1281,45 +1286,6 @@ export default function ProviderProfile({
                             </p>
                           </>
                         ) : null}
-                      </div>
-
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                        {visibleGoogleReviews.map((review: LiveReview, index: number) => (
-                          <button
-                            key={`${review.author_name || 'review'}-${index}`}
-                            type="button"
-                            onClick={() => setActiveGoogleReviewIndex(index)}
-                            className={`rounded-[1.35rem] border p-4 text-left transition ${
-                              index === activeGoogleReviewIndex
-                                ? 'border-[#CDAA66] bg-[#FFF6E8] shadow-[0_16px_32px_-28px_rgba(122,90,25,0.5)]'
-                                : 'border-[#E7DDD1] bg-[#FBF7F1] hover:border-[#DCCFBF]'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-semibold text-[#2F312E]">
-                                  {review.author_name || 'Google review'}
-                                </div>
-                                <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#938E86]">
-                                  {review.relative_time_description || 'Recent'}
-                                </div>
-                              </div>
-                              <span className="rounded-full bg-white/75 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
-                                {index + 1}/{visibleGoogleReviews.length}
-                              </span>
-                            </div>
-                            <div className="mt-3">
-                              {renderFilledStars(review.rating, {
-                                sizeClassName: 'h-3.5 w-3.5',
-                                filledClassName: 'fill-amber-400 text-amber-400',
-                                emptyClassName: 'text-[#D9C8A6]',
-                              })}
-                            </div>
-                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-[#6A665F]">
-                              {review.text || 'No review text provided.'}
-                            </p>
-                          </button>
-                        ))}
                       </div>
                     </div>
                   </>
