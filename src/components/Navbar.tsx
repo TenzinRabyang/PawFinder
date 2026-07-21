@@ -13,9 +13,10 @@ export default async function Navbar() {
           <div className="flex">
             <Link href="/" className="flex items-center">
               <BrandLogo
-                iconSize={42}
+                iconSize={30}
                 priority
-                wordmarkClassName="text-2xl font-bold text-[#20261F] font-sans"
+                gapClassName="gap-2"
+                wordmarkClassName="text-xl font-bold text-[#20261F] font-sans sm:text-2xl"
               />
             </Link>
           </div>

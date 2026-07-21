@@ -25,9 +25,10 @@ export default async function LoginPage({
           <div className="flex justify-center">
             <Link href="/" className="inline-flex">
               <BrandLogo
-                iconSize={44}
+                iconSize={28}
                 priority
-                wordmarkClassName="text-2xl font-bold tracking-tight text-stone-800 font-sans"
+                gapClassName="gap-2"
+                wordmarkClassName="text-xl font-bold tracking-tight text-stone-800 font-sans sm:text-2xl"
               />
             </Link>
           </div>

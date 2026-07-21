@@ -698,9 +698,10 @@ function SearchContent() {
               className="inline-flex transition-colors hover:text-[#B14A2B]"
             >
               <BrandLogo
-                iconSize={48}
+                iconSize={32}
                 priority
-                wordmarkClassName="font-display text-[1.55rem] tracking-[-0.03em] text-[#20261F]"
+                gapClassName="gap-2"
+                wordmarkClassName="font-display text-[1.25rem] tracking-[-0.03em] text-[#20261F] sm:text-[1.45rem]"
               />
             </Link>
             <p className="mt-0.5 text-sm text-[#6C675E]">

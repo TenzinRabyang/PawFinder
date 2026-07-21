@@ -54,8 +54,9 @@ export default function RootLayout({
             <div>
               <Link href="/" className="inline-flex">
                 <BrandLogo
-                  iconSize={34}
-                  wordmarkClassName="font-display text-lg tracking-[-0.03em] text-[#20261F]"
+                  iconSize={24}
+                  gapClassName="gap-2"
+                  wordmarkClassName="font-display text-base tracking-[-0.03em] text-[#20261F] sm:text-lg"
                 />
               </Link>
               <p className="mt-1 max-w-xl text-sm leading-6 text-[#646B61]">

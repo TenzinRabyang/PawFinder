@@ -935,7 +935,7 @@ export default function ChatBubble() {
                   <div className="flex items-center gap-2">
                     <BrandLogo
                       showWordmark={false}
-                      iconSize={28}
+                      iconSize={18}
                       priority
                     />
                     <div className="min-w-0">
@@ -1141,7 +1141,7 @@ export default function ChatBubble() {
                         className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
                       />
                       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                        <BrandLogo showWordmark={false} iconSize={16} />
+                        <BrandLogo showWordmark={false} iconSize={12} />
                       </span>
                     </div>
                     <button
@@ -1180,7 +1180,7 @@ export default function ChatBubble() {
             <Sparkles className="h-3.5 w-3.5" />
           </span>
           <span className="transition duration-200 group-hover:scale-105">
-            <BrandLogo showWordmark={false} iconSize={30} />
+            <BrandLogo showWordmark={false} iconSize={22} />
           </span>
           <span className="sr-only">Toggle PawFinder Assistant</span>
         </button>
