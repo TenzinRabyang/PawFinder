@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Star, MapPin, CheckCircle, Copy, Check, Info } from 'lucide-react'
+import { Star, MapPin, CheckCircle, Copy, Check, Info, ChevronLeft, ChevronRight } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
@@ -169,7 +169,6 @@ export default function ProviderProfile({
   initialTrustSnapshot?: InitialTrustSnapshot | null
 }) {
   const searchParams = useSearchParams()
-  const isFeaturedProfile = searchParams.get('featured') === '1'
   const requestedCategory = searchParams.get('category')
   
   const supabase = useMemo(() => createClient(), [])
@@ -189,6 +188,7 @@ export default function ProviderProfile({
   const [trustSnapshot, setTrustSnapshot] = useState<TrustSnapshotPayload | null>(initialTrustSnapshot || null)
   const [isTrustSnapshotLoading, setIsTrustSnapshotLoading] = useState(!initialTrustSnapshot)
   const [hasTrustSnapshotError, setHasTrustSnapshotError] = useState(false)
+  const [activeGoogleReviewIndex, setActiveGoogleReviewIndex] = useState(0)
   const actionToastTimerRef = useRef<number | null>(null)
 
   // Review Form State
@@ -906,6 +906,8 @@ export default function ProviderProfile({
         ? provider.google_rating.count
         : null
   const liveReviews = liveDetails?.reviews ?? []
+  const visibleGoogleReviews = liveReviews.slice(0, 5)
+  const hasGoogleReviews = visibleGoogleReviews.length > 0
   const availableTags = ['anxious', 'reactive', 'friendly', 'high energy', 'senior', 'rescue']
   const categoryLabel = formatCategoryLabel(provider.category) || 'Uncategorised Pet Service'
   const locationLabel = provider.address || provider.postcode || 'Address unavailable'
@@ -927,6 +929,16 @@ export default function ProviderProfile({
     : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
   const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
   const showTemperamentReviews = false
+
+  useEffect(() => {
+    if (visibleGoogleReviews.length === 0) {
+      setActiveGoogleReviewIndex(0)
+      return
+    }
+
+    setActiveGoogleReviewIndex((current) => Math.min(current, visibleGoogleReviews.length - 1))
+  }, [visibleGoogleReviews.length])
+
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
       <div className="relative overflow-hidden">
@@ -1168,6 +1180,159 @@ export default function ProviderProfile({
                   </a>
                 )}
               </div>
+
+              <div className="mt-8 rounded-[1.85rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.32)] sm:p-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
+                      Google Reviews
+                    </div>
+                    <h2 className="mt-2 font-display text-2xl font-bold text-[#344136]">
+                      Review Preview Near The Top
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-[#6F675C]">
+                      This section now appears on every business profile so trust signals stay consistent and easy
+                      to scan without a long page scroll.
+                    </p>
+                  </div>
+
+                  <div className="rounded-[1.3rem] border border-[#E7DDD1] bg-[#FFFDFC] px-4 py-3 text-sm text-[#5D5A54] shadow-sm">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8A8176]">
+                      Rating Snapshot
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-base font-semibold text-[#2F312E]">
+                      {renderFilledStars(headerGoogleRating, {
+                        sizeClassName: 'h-4 w-4',
+                        filledClassName: 'fill-amber-400 text-amber-400',
+                        emptyClassName: 'text-[#D9C8A6]',
+                      })}
+                      <span>{typeof headerGoogleRating === 'number' ? headerGoogleRating.toFixed(1) : 'N/A'}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#8A8176]">
+                      {typeof headerGoogleReviewCount === 'number'
+                        ? `${headerGoogleReviewCount} Google review${headerGoogleReviewCount === 1 ? '' : 's'}`
+                        : 'Review count unavailable'}
+                    </p>
+                  </div>
+                </div>
+
+                {hasGoogleReviews ? (
+                  <>
+                    <div className="mt-5 flex items-center justify-between gap-3">
+                      <div className="text-xs font-medium uppercase tracking-[0.18em] text-[#8A8176]">
+                        Showing {visibleGoogleReviews.length} live review{visibleGoogleReviews.length === 1 ? '' : 's'}
+                      </div>
+                      {visibleGoogleReviews.length > 1 ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveGoogleReviewIndex((current) =>
+                                current === 0 ? visibleGoogleReviews.length - 1 : current - 1
+                              )
+                            }
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#DDD1C4] bg-white text-[#6E6A63] transition hover:border-[#CDBEAE] hover:text-[#344136]"
+                            aria-label="Previous Google review"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveGoogleReviewIndex((current) =>
+                                current === visibleGoogleReviews.length - 1 ? 0 : current + 1
+                              )
+                            }
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#DDD1C4] bg-white text-[#6E6A63] transition hover:border-[#CDBEAE] hover:text-[#344136]"
+                            aria-label="Next Google review"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,0.9fr)]">
+                      <div className="rounded-[1.6rem] border border-[#E7DDD1] bg-[#FFFDFC] p-5 shadow-[0_16px_36px_-30px_rgba(60,48,35,0.22)]">
+                        {visibleGoogleReviews[activeGoogleReviewIndex] ? (
+                          <>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-[#2F312E]">
+                                  {visibleGoogleReviews[activeGoogleReviewIndex].author_name || 'Google review'}
+                                </div>
+                                <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[#938E86]">
+                                  {visibleGoogleReviews[activeGoogleReviewIndex].relative_time_description || 'Recent'}
+                                </div>
+                              </div>
+                              <div className="collar-tag collar-tag-small text-sm font-semibold">
+                                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
+                                  G
+                                </span>
+                                {renderFilledStars(visibleGoogleReviews[activeGoogleReviewIndex].rating, {
+                                  sizeClassName: 'h-3.5 w-3.5',
+                                  filledClassName: 'fill-amber-400 text-amber-400',
+                                  emptyClassName: 'text-[#D9C8A6]',
+                                })}
+                              </div>
+                            </div>
+                            <p className="mt-4 text-sm leading-7 text-[#5D5A54]">
+                              {visibleGoogleReviews[activeGoogleReviewIndex].text || 'No review text provided.'}
+                            </p>
+                          </>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                        {visibleGoogleReviews.map((review: LiveReview, index: number) => (
+                          <button
+                            key={`${review.author_name || 'review'}-${index}`}
+                            type="button"
+                            onClick={() => setActiveGoogleReviewIndex(index)}
+                            className={`rounded-[1.35rem] border p-4 text-left transition ${
+                              index === activeGoogleReviewIndex
+                                ? 'border-[#CDAA66] bg-[#FFF6E8] shadow-[0_16px_32px_-28px_rgba(122,90,25,0.5)]'
+                                : 'border-[#E7DDD1] bg-[#FBF7F1] hover:border-[#DCCFBF]'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-[#2F312E]">
+                                  {review.author_name || 'Google review'}
+                                </div>
+                                <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#938E86]">
+                                  {review.relative_time_description || 'Recent'}
+                                </div>
+                              </div>
+                              <span className="rounded-full bg-white/75 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
+                                {index + 1}/{visibleGoogleReviews.length}
+                              </span>
+                            </div>
+                            <div className="mt-3">
+                              {renderFilledStars(review.rating, {
+                                sizeClassName: 'h-3.5 w-3.5',
+                                filledClassName: 'fill-amber-400 text-amber-400',
+                                emptyClassName: 'text-[#D9C8A6]',
+                              })}
+                            </div>
+                            <p className="mt-3 line-clamp-3 text-sm leading-6 text-[#6A665F]">
+                              {review.text || 'No review text provided.'}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="mt-5 rounded-[1.5rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] p-5 text-sm leading-6 text-[#6F675C]">
+                    <div className="font-semibold text-[#344136]">Google reviews unavailable right now</div>
+                    <p className="mt-2">
+                      This profile keeps the same review area as every other business page. If live Google reviews are
+                      not available yet, the section stays in place with this fallback instead of disappearing.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="pawfinder-fade-up-delay-2 w-full rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
@@ -1230,46 +1395,6 @@ export default function ProviderProfile({
                 </div>
             </div>
           </div>
-
-          {isFeaturedProfile && liveReviews.length > 0 && (
-            <div className="mt-8 rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFFDFC] p-5 shadow-[0_18px_40px_-34px_rgba(60,48,35,0.2)] sm:p-8">
-              <h2 className="font-display text-2xl font-bold text-[#344136]">Google Review Preview</h2>
-              <p className="mt-1 text-sm text-[#77736B]">
-                Showing up to 5 live Google reviews for the nearest result you opened from search.
-              </p>
-              <div className="mt-6 grid gap-4 lg:grid-cols-2">
-                {liveReviews.slice(0, 5).map((review: LiveReview, index: number) => (
-                  <div
-                    key={`${review.author_name || 'review'}-${index}`}
-                    className="rounded-[1.5rem] border border-[#E7DDD1] bg-[#FBF7F1] p-5"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="font-semibold text-[#2F312E]">{review.author_name || 'Google review'}</span>
-                        <div className="mt-1 text-xs uppercase tracking-wide text-[#938E86]">
-                          {review.relative_time_description || 'Recent'}
-                        </div>
-                      </div>
-                      <div className="collar-tag collar-tag-small text-sm font-semibold">
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
-                          G
-                        </span>
-                        {renderFilledStars(review.rating, {
-                          sizeClassName: 'h-3.5 w-3.5',
-                          filledClassName: 'fill-amber-400 text-amber-400',
-                          emptyClassName: 'text-[#D9C8A6]',
-                        })}
-                        <span className="rounded-full bg-white/65 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#7A5A19]">
-                          review
-                        </span>
-                      </div>
-                    </div>
-                    <p className="mt-4 text-sm leading-6 text-[#5D5A54]">{review.text}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {showTemperamentReviews ? (
             <div className="mt-12">
