@@ -27,7 +27,7 @@ export default function BrandLogo({
         aria-hidden="true"
       >
         <Image
-          src="/pawfinder-logo.svg"
+          src="/pawfinder-logo.png"
           alt="PawFinder logo"
           fill
           sizes={`${iconSize}px`}

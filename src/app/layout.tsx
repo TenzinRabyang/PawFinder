@@ -27,9 +27,9 @@ export const metadata: Metadata = {
   title: "PawFinder | Find local pet care",
   description: "Search vets, groomers, walkers, and pet care near you with real local context.",
   icons: {
-    icon: "/pawfinder-logo.svg",
-    shortcut: "/pawfinder-logo.svg",
-    apple: "/pawfinder-logo.svg",
+    icon: "/pawfinder-logo.png",
+    shortcut: "/pawfinder-logo.png",
+    apple: "/pawfinder-logo.png",
   },
 };
 
