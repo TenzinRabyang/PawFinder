@@ -1,9 +1,10 @@
 "use client";
 
-import { ExternalLink, PawPrint, SendHorizontal, Sparkles, Trash2, X } from "lucide-react";
+import { ExternalLink, SendHorizontal, Sparkles, Trash2, X } from "lucide-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import BrandLogo from "@/components/brand/BrandLogo";
 import LocationSearchControl, {
   type LocationSearchContext,
 } from "@/components/location/LocationSearchControl";
@@ -932,9 +933,11 @@ export default function ChatBubble() {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F3E0D9] text-[#B14A2B]">
-                      <Sparkles className="h-3.5 w-3.5" />
-                    </span>
+                    <BrandLogo
+                      showWordmark={false}
+                      iconSize={28}
+                      priority
+                    />
                     <div className="min-w-0">
                       <h2 className="truncate font-display text-lg leading-none tracking-[-0.03em] text-[#20261F]">
                         PawFinder Assistant
@@ -1137,7 +1140,9 @@ export default function ChatBubble() {
                         disabled={isLoading || isChatLimitReached}
                         className="w-full rounded-[1.15rem] border border-[#DCD3BE] bg-[#FAF7F1] px-4 py-3 pr-11 text-sm text-[#20261F] outline-none transition placeholder:text-[#7D837B] focus:border-[#B14A2B] focus:bg-white"
                       />
-                      <PawPrint className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#B14A2B]" />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                        <BrandLogo showWordmark={false} iconSize={16} />
+                      </span>
                     </div>
                     <button
                       type="submit"
@@ -1174,7 +1179,9 @@ export default function ChatBubble() {
           <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-[#DCD3BE] bg-[#F7F1E5] text-[#6E7C5B] shadow-sm">
             <Sparkles className="h-3.5 w-3.5" />
           </span>
-          <PawPrint className="h-7 w-7 transition duration-200 group-hover:scale-105" />
+          <span className="transition duration-200 group-hover:scale-105">
+            <BrandLogo showWordmark={false} iconSize={30} />
+          </span>
           <span className="sr-only">Toggle PawFinder Assistant</span>
         </button>
       </div>

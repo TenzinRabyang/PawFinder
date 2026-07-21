@@ -1,10 +1,10 @@
 'use client'
 
-import Image from 'next/image'
 import { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star, X } from 'lucide-react'
+import BrandLogo from '@/components/brand/BrandLogo'
 import { ProviderImage } from '@/components/ProviderImage'
 import InlineSearchFeedbackCard from '@/components/search/InlineSearchFeedbackCard'
 import NoResultsFeedback from '@/components/search/NoResultsFeedback'
@@ -692,22 +692,16 @@ function SearchContent() {
     <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:gap-6 lg:px-8 lg:py-6">
       <header className="rounded-[1.8rem] border border-[#DDD3C6] bg-[#FFFDFC]/92 px-4 py-4 shadow-[0_18px_40px_-34px_rgba(32,38,31,0.34)] backdrop-blur sm:px-5">
         <div className="flex items-center gap-3">
-          <div className="relative h-12 w-12 overflow-hidden rounded-full border border-[#D7CCBE] bg-[#F6F1E8] shadow-[0_12px_26px_-18px_rgba(32,38,31,0.45)]">
-            <Image
-              src="/pet-placeholder.svg"
-              alt="PawFinder logo"
-              fill
-              sizes="48px"
-              className="object-cover"
-              priority
-            />
-          </div>
           <div>
             <Link
               href="/"
-              className="font-display text-[1.55rem] tracking-[-0.03em] text-[#20261F] transition-colors hover:text-[#B14A2B]"
+              className="inline-flex transition-colors hover:text-[#B14A2B]"
             >
-              PawFinder
+              <BrandLogo
+                iconSize={48}
+                priority
+                wordmarkClassName="font-display text-[1.55rem] tracking-[-0.03em] text-[#20261F]"
+              />
             </Link>
             <p className="mt-0.5 text-sm text-[#6C675E]">
               Search by care needs, species, and local context in one place.

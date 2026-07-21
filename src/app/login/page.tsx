@@ -1,5 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import BrandLogo from '@/components/brand/BrandLogo'
 import LoginForm from '@/components/LoginForm'
 
 export default async function LoginPage({
@@ -20,6 +22,15 @@ export default async function LoginPage({
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#FAF9F6] px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="w-full max-w-md space-y-6 rounded-2xl border border-stone-100 bg-white p-6 shadow-sm sm:space-y-8 sm:p-8">
         <div>
+          <div className="flex justify-center">
+            <Link href="/" className="inline-flex">
+              <BrandLogo
+                iconSize={44}
+                priority
+                wordmarkClassName="text-2xl font-bold tracking-tight text-stone-800 font-sans"
+              />
+            </Link>
+          </div>
           <h2 className="mt-4 text-center text-2xl font-bold tracking-tight text-stone-800 font-sans sm:mt-6 sm:text-3xl">
             Sign in to PawFinder
           </h2>

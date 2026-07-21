@@ -3,6 +3,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { Geist, Geist_Mono, Quicksand } from "next/font/google";
 import Link from "next/link";
 import { Suspense } from "react";
+import BrandLogo from "@/components/brand/BrandLogo";
 import ChatBubble from "@/components/assistant/ChatBubble";
 import "./globals.css";
 
@@ -25,6 +26,11 @@ const quicksand = Quicksand({
 export const metadata: Metadata = {
   title: "PawFinder | Find local pet care",
   description: "Search vets, groomers, walkers, and pet care near you with real local context.",
+  icons: {
+    icon: "/pawfinder-logo.svg",
+    shortcut: "/pawfinder-logo.svg",
+    apple: "/pawfinder-logo.svg",
+  },
 };
 
 export default function RootLayout({
@@ -46,7 +52,12 @@ export default function RootLayout({
         <footer className="border-t border-[#DCD3BE] bg-[#FCF8F2]">
           <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 text-sm text-[#5B6258] sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
             <div>
-              <div className="font-display text-lg tracking-[-0.03em] text-[#20261F]">PawFinder</div>
+              <Link href="/" className="inline-flex">
+                <BrandLogo
+                  iconSize={34}
+                  wordmarkClassName="font-display text-lg tracking-[-0.03em] text-[#20261F]"
+                />
+              </Link>
               <p className="mt-1 max-w-xl text-sm leading-6 text-[#646B61]">
                 Transparent pet-care discovery with clear platform policies and direct support access.
               </p>

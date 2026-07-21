@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
+import BrandLogo from '@/components/brand/BrandLogo'
 
 export default async function Navbar() {
   const supabase = await createClient()
@@ -11,7 +12,11 @@ export default async function Navbar() {
         <div className="flex min-h-16 flex-col justify-center gap-3 py-3 sm:h-16 sm:flex-row sm:items-center sm:justify-between sm:py-0">
           <div className="flex">
             <Link href="/" className="flex items-center">
-              <span className="text-2xl font-bold text-[#e07a5f] font-sans">PawFinder</span>
+              <BrandLogo
+                iconSize={42}
+                priority
+                wordmarkClassName="text-2xl font-bold text-[#20261F] font-sans"
+              />
             </Link>
           </div>
           <div className="flex flex-wrap items-center gap-3 sm:justify-end">
