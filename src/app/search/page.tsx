@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState, useEffect, Suspense, useRef, useMemo, useCallback } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle, MapPin, Star } from 'lucide-react'
+import { ArrowDownWideNarrow, CheckCircle, Filter, MapPin, Star, X } from 'lucide-react'
 import { ProviderImage } from '@/components/ProviderImage'
 import InlineSearchFeedbackCard from '@/components/search/InlineSearchFeedbackCard'
 import NoResultsFeedback from '@/components/search/NoResultsFeedback'
@@ -199,6 +199,25 @@ function formatSearchIntentTerm(filters: SearchFilterState) {
   return segments.join(' • ') || 'General pet care search'
 }
 
+function getActiveFilterChips(filters: SearchFilterState, locationLabel: string) {
+  const chips: string[] = []
+
+  if (locationLabel) chips.push(locationLabel)
+  if (filters.category) chips.push(filters.category === 'pet_shop' ? 'Pet Shop' : filters.category)
+  filters.species.forEach((species) => chips.push(SPECIES_LABELS[species]))
+
+  if (filters.careType) chips.push(filters.careType.replace(/_/g, ' '))
+  if (filters.environment) chips.push(filters.environment.replace(/_/g, ' '))
+  filters.capabilities.forEach((capability) => chips.push(capability.replace(/_/g, ' ')))
+  filters.breedTags.forEach((breedTag) => chips.push(`Breed: ${breedTag}`))
+  filters.handlingNeeds.forEach((handlingNeed) => chips.push(handlingNeed.replace(/_/g, ' ')))
+  if (filters.isEmergency247) chips.push('24/7 emergency')
+  if (filters.offersHouseCalls) chips.push('House calls / mobile')
+  if (filters.hasRawPrescriptionDiets) chips.push('Raw / prescription diets')
+
+  return dedupeValues(chips)
+}
+
 function SearchContent() {
   const RESULTS_PAGE_SIZE = 5
   const router = useRouter()
@@ -216,6 +235,7 @@ function SearchContent() {
   const [isApplyingFilters, setIsApplyingFilters] = useState(false)
   const [featuredLoadStatus, setFeaturedLoadStatus] = useState<Record<string, FeaturedLoadStatus>>({})
   const [visibleCount, setVisibleCount] = useState(RESULTS_PAGE_SIZE)
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false)
   const lastAutoFetchKeyRef = useRef<string | null>(null)
   const activeLocationLabel = selectedLocationLabel || searchParams.get('postcode') || ''
   const filters = useMemo<SearchFilterState>(
@@ -534,6 +554,7 @@ function SearchContent() {
 
       const nextQuery = nextParams.toString()
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
+      setIsFiltersOpen(false)
     } catch (applyError) {
       setLocationError(applyError instanceof Error ? applyError.message : 'Unable to update the search area.')
     } finally {
@@ -610,6 +631,11 @@ function SearchContent() {
     () => (visibleProviders.length > 0 ? Math.min(2, visibleProviders.length - 1) : -1),
     [visibleProviders.length]
   )
+  const activeFilterChips = useMemo(
+    () => getActiveFilterChips(filters, activeLocationLabel),
+    [activeLocationLabel, filters]
+  )
+  const hasActiveFilters = activeFilterChips.length > 0
 
   const hasMoreResults = visibleCount < sortedProviders.length
 
@@ -690,18 +716,109 @@ function SearchContent() {
         </div>
       </header>
 
-      {/* Sidebar */}
-      <aside className="w-full flex-shrink-0">
-        <SearchFilters
-          initialState={filters}
-          sortBy={sortBy}
-          isApplyingFilters={isApplyingFilters}
-          locationError={locationError}
-          searchLimitMessage={searchLimitMessage}
-          onApply={handleApplyFilters}
-          onSortChange={handleSortChange}
-        />
-      </aside>
+      <div className="rounded-2xl border border-stone-100 bg-white px-4 py-3 shadow-sm sm:px-5">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-between">
+          <div className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFiltersOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-stone-400 hover:bg-stone-50"
+            >
+              <Filter className="h-4 w-4" />
+              Filters
+              {hasActiveFilters ? (
+                <span className="inline-flex min-w-[1.3rem] items-center justify-center rounded-full bg-[#3D5A45] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {activeFilterChips.length}
+                </span>
+              ) : null}
+            </button>
+
+            <div className="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-stone-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-500">
+              <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+              Sort
+              <select
+                value={sortBy}
+                onChange={(event) => handleSortChange(event.target.value as SortOption)}
+                className="bg-transparent text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-700 outline-none"
+              >
+                <option value="distance">Distance</option>
+                <option value="rating">Review Star</option>
+                <option value="review_count">Review Count</option>
+              </select>
+            </div>
+          </div>
+
+          {hasActiveFilters ? (
+            <p className="text-xs text-stone-500">
+              {activeFilterChips.length} active filter{activeFilterChips.length === 1 ? '' : 's'} applied
+            </p>
+          ) : (
+            <p className="text-xs text-stone-500">Tap filters to refine species, care needs, and category.</p>
+          )}
+        </div>
+
+        {hasActiveFilters ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {activeFilterChips.slice(0, 8).map((chip) => (
+              <span
+                key={chip}
+                className="rounded-full border border-[#D8C4A6] bg-[#FFF8ED] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6A5121]"
+              >
+                {chip}
+              </span>
+            ))}
+            {activeFilterChips.length > 8 ? (
+              <span className="rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">
+                +{activeFilterChips.length - 8} more
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {isFiltersOpen ? (
+        <div
+          className="fixed inset-0 z-[90] bg-stone-900/40 backdrop-blur-sm"
+          onClick={() => setIsFiltersOpen(false)}
+          role="presentation"
+        >
+          <aside
+            className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto border-l border-stone-200 bg-[#FAF9F6] p-4 shadow-2xl sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search filters"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8C5B4D]">
+                  Filter Panel
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-stone-900">Refine Your Search</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFiltersOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 transition hover:border-stone-300 hover:text-stone-900"
+                aria-label="Close filters"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <SearchFilters
+              initialState={filters}
+              sortBy={sortBy}
+              isApplyingFilters={isApplyingFilters}
+              locationError={locationError}
+              searchLimitMessage={searchLimitMessage}
+              onApply={handleApplyFilters}
+              onSortChange={handleSortChange}
+              showSortControl={false}
+            />
+          </aside>
+        </div>
+      ) : null}
 
       {/* Results */}
       <main className="flex-1">

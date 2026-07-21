@@ -34,6 +34,7 @@ type SearchFiltersProps = {
   searchLimitMessage: string | null
   onApply: (filters: SearchFilterState) => void | Promise<void>
   onSortChange: (value: SortOption) => void
+  showSortControl?: boolean
 }
 
 const CATEGORY_OPTIONS: Array<{ value: SearchCategory; label: string }> = [
@@ -158,6 +159,7 @@ export default function SearchFilters({
   searchLimitMessage,
   onApply,
   onSortChange,
+  showSortControl = true,
 }: SearchFiltersProps) {
   const [draft, setDraft] = useState<SearchFilterState>(initialState)
   const [breedDraft, setBreedDraft] = useState('')
@@ -237,7 +239,13 @@ export default function SearchFilters({
         }}
         className="space-y-4"
       >
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,0.9fr)_auto] lg:items-end">
+        <div
+          className={`grid gap-3 lg:items-end ${
+            showSortControl
+              ? 'lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,0.9fr)_auto]'
+              : 'lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_auto]'
+          }`}
+        >
           <div>
             <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-stone-500">
               Location
@@ -278,21 +286,23 @@ export default function SearchFilters({
             </select>
           </div>
 
-          <div>
-            <label className="mb-1 flex items-center text-xs font-medium uppercase tracking-wide text-stone-500">
-              <ArrowDownWideNarrow className="mr-1.5 h-3.5 w-3.5 text-stone-500" />
-              Sort Results
-            </label>
-            <select
-              value={sortBy}
-              onChange={(event) => onSortChange(event.target.value as SortOption)}
-              className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
-            >
-              <option value="distance">Distance</option>
-              <option value="rating">Review Star</option>
-              <option value="review_count">Review Count</option>
-            </select>
-          </div>
+          {showSortControl ? (
+            <div>
+              <label className="mb-1 flex items-center text-xs font-medium uppercase tracking-wide text-stone-500">
+                <ArrowDownWideNarrow className="mr-1.5 h-3.5 w-3.5 text-stone-500" />
+                Sort Results
+              </label>
+              <select
+                value={sortBy}
+                onChange={(event) => onSortChange(event.target.value as SortOption)}
+                className="w-full rounded-lg border border-stone-200 bg-stone-50/60 px-3 py-2 text-sm text-stone-700 focus:border-[#829e8d] focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#829e8d]"
+              >
+                <option value="distance">Distance</option>
+                <option value="rating">Review Star</option>
+                <option value="review_count">Review Count</option>
+              </select>
+            </div>
+          ) : null}
 
           <div>
             <button
