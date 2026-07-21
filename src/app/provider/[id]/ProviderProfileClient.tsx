@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
-import { Star, MapPin, CheckCircle, Copy, Check, Info, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Star, MapPin, CheckCircle, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { BREED_OPTIONS } from '@/lib/breed-taxonomy'
 import { ProviderImage } from '@/components/ProviderImage'
 import ActionTriggerToast, {
@@ -184,7 +184,6 @@ export default function ProviderProfile({
   const [reviewSubmitState, setReviewSubmitState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [shouldShowActionToast, setShouldShowActionToast] = useState(false)
   const [activeContactAction, setActiveContactAction] = useState<ProviderContactActionType | null>(null)
-  const [showGalleryInfo, setShowGalleryInfo] = useState(false)
   const [trustSnapshot, setTrustSnapshot] = useState<TrustSnapshotPayload | null>(initialTrustSnapshot || null)
   const [isTrustSnapshotLoading, setIsTrustSnapshotLoading] = useState(!initialTrustSnapshot)
   const [hasTrustSnapshotError, setHasTrustSnapshotError] = useState(false)
@@ -936,8 +935,14 @@ export default function ProviderProfile({
   const directionsUrl = provider.google_place_id
     ? `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(provider.google_place_id)}&query=${directionsQuery}`
     : `https://www.google.com/maps/search/?api=1&query=${directionsQuery}`
-  const lockedGallerySlots = Array.from({ length: 4 }, (_, index) => index)
   const showTemperamentReviews = false
+  const serviceHighlights = Array.from(
+    new Set([...visibleConfirmedServiceLabels, ...visibleInferredServiceLabels])
+  ).slice(0, 4)
+  const supportHighlights = consolidatedBreedBadges.slice(0, 4)
+  const profileSummary =
+    trustSnapshot?.overall_summary?.trim() ||
+    `${provider.name} offers ${categoryLabel.toLowerCase()} support with contact options, service details, and review signals in one place.`
 
   return (
     <div className="min-h-screen bg-[#FAF6F0] text-[#2F312E]">
@@ -1136,82 +1141,93 @@ export default function ProviderProfile({
                 </div>
               </div>
 
-              <div className="pawfinder-fade-up-delay-3 mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-4">
-                {callNumber && (
-                  <button
-                    onClick={() => {
-                      setShowCallPopup(true)
-                      handleContactAction('phone_click')
-                    }}
-                    className="pressable-soft rounded-full border border-[#3D5A45] bg-[#3D5A45] px-6 py-3 font-semibold text-white shadow-[0_14px_32px_-22px_rgba(61,90,69,0.85)] hover:bg-[#324A39]"
-                  >
-                    Call Business
-                  </button>
-                )}
-                <a
-                  href={directionsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="pressable-soft inline-flex items-center justify-center gap-2 rounded-full border border-[#D6CCBD] bg-[#FFFDFC] px-6 py-3 text-center font-semibold text-[#344136] shadow-[0_14px_32px_-24px_rgba(61,90,69,0.35)] hover:bg-[#F7F0E7]"
-                >
-                  <MapPin className="h-4 w-4" />
-                  <span>Get Directions</span>
-                </a>
-                {websiteUrl && (
-                  <a
-                    href={websiteUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => handleContactAction('website_click')}
-                    className="pressable-soft rounded-full border border-[#D8C4A6] bg-[#FFF8ED] px-6 py-3 text-center font-semibold text-[#6A5121] shadow-[0_14px_32px_-24px_rgba(122,90,25,0.65)] hover:bg-[#FFF1D7]"
-                  >
-                    Visit Website
-                  </a>
-                )}
-                {bookingUrl && (
-                  <a
-                    href={bookingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => handleContactAction('booking_click')}
-                    className="pressable-soft rounded-full border border-[#C97C5D]/20 bg-[#C97C5D] px-6 py-3 text-center font-semibold text-white shadow-[0_14px_32px_-24px_rgba(145,84,60,0.7)] hover:bg-[#B96E52]"
-                  >
-                    Book Online
-                  </a>
-                )}
+              <div className="pawfinder-fade-up-delay-3 mt-8 rounded-[1.7rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_18px_42px_-34px_rgba(60,48,35,0.34)]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="max-w-2xl">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
+                      Quick Decision Snapshot
+                    </div>
+                    <h2 className="mt-2 font-display text-2xl font-bold text-[#344136]">
+                      Everything important at a glance
+                    </h2>
+                    <p className="mt-2 text-sm leading-6 text-[#6F675C]">{profileSummary}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {bookingUrl ? (
+                      <a
+                        href={bookingUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => handleContactAction('booking_click')}
+                        className="pressable-soft rounded-full border border-[#C97C5D]/20 bg-[#C97C5D] px-6 py-3 text-center font-semibold text-white shadow-[0_14px_32px_-24px_rgba(145,84,60,0.7)] hover:bg-[#B96E52]"
+                      >
+                        Book Online
+                      </a>
+                    ) : callNumber ? (
+                      <button
+                        onClick={() => {
+                          setShowCallPopup(true)
+                          handleContactAction('phone_click')
+                        }}
+                        className="pressable-soft rounded-full border border-[#3D5A45] bg-[#3D5A45] px-6 py-3 font-semibold text-white shadow-[0_14px_32px_-22px_rgba(61,90,69,0.85)] hover:bg-[#324A39]"
+                      >
+                        Call Business
+                      </button>
+                    ) : websiteUrl ? (
+                      <a
+                        href={websiteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => handleContactAction('website_click')}
+                        className="pressable-soft rounded-full border border-[#3D5A45] bg-[#3D5A45] px-6 py-3 text-center font-semibold text-white shadow-[0_14px_32px_-22px_rgba(61,90,69,0.85)] hover:bg-[#324A39]"
+                      >
+                        Visit Website
+                      </a>
+                    ) : null}
+                    <a
+                      href={directionsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="pressable-soft inline-flex items-center justify-center gap-2 rounded-full border border-[#D6CCBD] bg-[#FFFDFC] px-6 py-3 text-center font-semibold text-[#344136] shadow-[0_14px_32px_-24px_rgba(61,90,69,0.35)] hover:bg-[#F7F0E7]"
+                    >
+                      <MapPin className="h-4 w-4" />
+                      <span>Get Directions</span>
+                    </a>
+                    {callNumber && bookingUrl ? (
+                      <button
+                        onClick={() => {
+                          setShowCallPopup(true)
+                          handleContactAction('phone_click')
+                        }}
+                        className="pressable-soft rounded-full border border-[#D6CCBD] bg-[#FFFDFC] px-6 py-3 font-semibold text-[#344136] shadow-[0_14px_32px_-24px_rgba(61,90,69,0.25)] hover:bg-[#F7F0E7]"
+                      >
+                        Call Instead
+                      </button>
+                    ) : null}
+                    {websiteUrl && !bookingUrl ? (
+                      <a
+                        href={websiteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => handleContactAction('website_click')}
+                        className="pressable-soft rounded-full border border-[#D8C4A6] bg-[#FFF8ED] px-6 py-3 text-center font-semibold text-[#6A5121] shadow-[0_14px_32px_-24px_rgba(122,90,25,0.45)] hover:bg-[#FFF1D7]"
+                      >
+                        Visit Website
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
               </div>
 
               <div className="mt-8 rounded-[1.85rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.32)] sm:p-6">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="max-w-2xl">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
                       Google Reviews
                     </div>
-                    <h2 className="mt-2 font-display text-2xl font-bold text-[#344136]">
-                      Review Preview Near The Top
-                    </h2>
+                    <h2 className="mt-2 font-display text-2xl font-bold text-[#344136]">Recent Google Reviews</h2>
                     <p className="mt-2 text-sm leading-6 text-[#6F675C]">
-                      This section now appears on every business profile so trust signals stay consistent and easy
-                      to scan without a long page scroll.
-                    </p>
-                  </div>
-
-                  <div className="rounded-[1.3rem] border border-[#E7DDD1] bg-[#FFFDFC] px-4 py-3 text-sm text-[#5D5A54] shadow-sm">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8A8176]">
-                      Rating Snapshot
-                    </div>
-                    <div className="mt-2 flex items-center gap-2 text-base font-semibold text-[#2F312E]">
-                      {renderFilledStars(headerGoogleRating, {
-                        sizeClassName: 'h-4 w-4',
-                        filledClassName: 'fill-amber-400 text-amber-400',
-                        emptyClassName: 'text-[#D9C8A6]',
-                      })}
-                      <span>{typeof headerGoogleRating === 'number' ? headerGoogleRating.toFixed(1) : 'N/A'}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-[#8A8176]">
-                      {typeof headerGoogleReviewCount === 'number'
-                        ? `${headerGoogleReviewCount} Google review${headerGoogleReviewCount === 1 ? '' : 's'}`
-                        : 'Review count unavailable'}
+                      Read recent customer feedback without leaving the profile page.
                     </p>
                   </div>
                 </div>
@@ -1251,6 +1267,21 @@ export default function ProviderProfile({
                         </div>
                       ) : null}
                     </div>
+                    {visibleGoogleReviews.length > 1 ? (
+                      <div className="mt-3 flex items-center gap-2">
+                        {visibleGoogleReviews.map((_, index) => (
+                          <span
+                            key={`google-review-dot-${index}`}
+                            className={`h-2 rounded-full transition-all ${
+                              index === activeGoogleReviewIndex
+                                ? 'w-6 bg-[#C97C5D]'
+                                : 'w-2 bg-[#D9C8A6]'
+                            }`}
+                            aria-hidden="true"
+                          />
+                        ))}
+                      </div>
+                    ) : null}
 
                     <div className="mt-5">
                       <div className="rounded-[1.6rem] border border-[#E7DDD1] bg-[#FFFDFC] p-5 shadow-[0_16px_36px_-30px_rgba(60,48,35,0.22)]">
@@ -1291,10 +1322,10 @@ export default function ProviderProfile({
                   </>
                 ) : (
                   <div className="mt-5 rounded-[1.5rem] border border-dashed border-[#DCCFC0] bg-[#FFFDFC] p-5 text-sm leading-6 text-[#6F675C]">
-                    <div className="font-semibold text-[#344136]">Google reviews unavailable right now</div>
+                    <div className="font-semibold text-[#344136]">Google reviews are unavailable right now</div>
                     <p className="mt-2">
-                      This profile keeps the same review area as every other business page. If live Google reviews are
-                      not available yet, the section stays in place with this fallback instead of disappearing.
+                      We could not load live Google review content for this business right now. You can still use the
+                      trust summary, service coverage, and contact options above to evaluate the provider.
                     </p>
                   </div>
                 )}
@@ -1302,62 +1333,62 @@ export default function ProviderProfile({
             </div>
 
             <div className="pawfinder-fade-up-delay-2 w-full rounded-[1.9rem] border border-[#E5DBCF] bg-[#FFF8F1] p-5 shadow-[0_22px_42px_-34px_rgba(60,48,35,0.42)] sm:p-6 lg:w-[21rem] lg:flex-none">
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
-                      Gallery
-                    </div>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setShowGalleryInfo((current) => !current)}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-[#DDD1C4] bg-white/80 text-[#6E6A63] shadow-sm transition-colors hover:bg-white"
-                        aria-label="Why are gallery images unavailable?"
-                        aria-expanded={showGalleryInfo}
-                      >
-                        <Info className="h-3.5 w-3.5" />
-                      </button>
-                      {showGalleryInfo ? (
-                        <div className="absolute right-0 top-9 z-20 w-44 rounded-2xl border border-[#E5DBCF] bg-white px-3 py-2 text-xs font-medium leading-5 text-[#5D5A54] shadow-[0_18px_36px_-28px_rgba(60,48,35,0.45)]">
-                          Images not available during beta testing. 🐾
-                        </div>
-                      ) : null}
-                    </div>
+                <div className="rounded-[1.5rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
+                    Business Snapshot
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {lockedGallerySlots.map((slot) => (
-                      <div
-                        key={slot}
-                        className="relative aspect-[4/3] min-h-[6.25rem] overflow-hidden rounded-[1rem] border border-[#E5DBCF] bg-[linear-gradient(180deg,rgba(248,238,225,0.96)_0%,rgba(243,232,216,0.96)_100%)]"
-                      >
-                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.7),transparent_52%),linear-gradient(180deg,rgba(255,255,255,0.34)_0%,rgba(255,255,255,0.08)_100%)]" />
-                        <div className="absolute inset-[12%] overflow-hidden rounded-[0.9rem] border border-white/35 bg-white/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
-                          <div className="absolute inset-0 scale-110 opacity-70 blur-md">
-                            <Image
-                              src="/pet-placeholder.svg"
-                              alt=""
-                              fill
-                              sizes="160px"
-                              className="object-cover"
-                            />
-                          </div>
-                          <div className="absolute inset-0 bg-white/20" />
-                        </div>
-                        <div className="absolute inset-x-3 bottom-3 rounded-full border border-white/45 bg-white/70 px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7C7468] backdrop-blur-sm">
-                          Beta gallery preview
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <dl className="mt-4 space-y-4 text-sm text-[#5D5A54]">
+                    <div className="flex items-start justify-between gap-4 border-b border-[#F0E7DB] pb-3">
+                      <dt className="font-semibold text-[#344136]">Open status</dt>
+                      <dd className="text-right">
+                        {isOpenNow === true ? 'Open now' : isOpenNow === false ? 'Closed now' : 'Hours unavailable'}
+                      </dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-4 border-b border-[#F0E7DB] pb-3">
+                      <dt className="font-semibold text-[#344136]">Listing status</dt>
+                      <dd className="text-right">{provider.is_claimed ? 'Claimed profile' : 'Unclaimed profile'}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-4 border-b border-[#F0E7DB] pb-3">
+                      <dt className="font-semibold text-[#344136]">Phone</dt>
+                      <dd className="text-right">{callNumber || 'Not listed'}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-4 border-b border-[#F0E7DB] pb-3">
+                      <dt className="font-semibold text-[#344136]">Website</dt>
+                      <dd className="text-right">{websiteUrl ? 'Available' : 'Not listed'}</dd>
+                    </div>
+                    <div className="flex items-start justify-between gap-4">
+                      <dt className="font-semibold text-[#344136]">Booking</dt>
+                      <dd className="text-right">{bookingUrl ? 'Online booking available' : 'Book by contact'}</dd>
+                    </div>
+                  </dl>
                 </div>
 
-                <div className="mt-6 rounded-[1.5rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4 text-sm leading-6 text-[#5D5A54]">
+                <div className="mt-6 rounded-[1.5rem] border border-[#E7DDD1] bg-[#FFFDFC] p-4 text-sm leading-6 text-[#5D5A54] shadow-sm">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8A8176]">
-                    Profile Atmosphere
+                    Best For
                   </div>
-                  <p className="mt-2">
-                    PawFinder keeps the provider overview easy to scan so trust signals, services, and breed support all read as one clear profile.
-                  </p>
+                  {serviceHighlights.length > 0 || supportHighlights.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {serviceHighlights.map((service) => (
+                        <span
+                          key={`service-highlight-${service}`}
+                          className="rounded-full border border-[#D6CCBD] bg-[#F7F0E7] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#6E6A63]"
+                        >
+                          {service}
+                        </span>
+                      ))}
+                      {supportHighlights.map((support) => (
+                        <span
+                          key={`support-highlight-${support}`}
+                          className="rounded-full border border-[#E5D9C8] bg-[#FBF6EE] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#6F675C]"
+                        >
+                          {support}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3">Contact the provider directly for fit, service coverage, and species support details.</p>
+                  )}
                 </div>
             </div>
           </div>
