@@ -71,6 +71,8 @@ export default function LocationSearchControl({
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const requestCounterRef = useRef(0);
+  const autocompleteControllerRef = useRef<AbortController | null>(null);
+  const locationDetailsControllerRef = useRef<AbortController | null>(null);
   const postcodePattern = "[A-Za-z]{1,2}[0-9][A-Za-z0-9]?\\s?[0-9][A-Za-z]{2}";
 
   useEffect(() => {
@@ -84,6 +86,13 @@ export default function LocationSearchControl({
   }, []);
 
   useEffect(() => {
+    return () => {
+      autocompleteControllerRef.current?.abort();
+      locationDetailsControllerRef.current?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     if (suppressAutocomplete || disabled) return;
 
     const trimmedValue = query.trim();
@@ -92,11 +101,13 @@ export default function LocationSearchControl({
 
     const currentRequestId = requestCounterRef.current + 1;
     requestCounterRef.current = currentRequestId;
+    autocompleteControllerRef.current?.abort();
 
     const timeoutId = window.setTimeout(async () => {
       setIsLoadingSuggestions(true);
       setAutocompleteError("");
       const controller = new AbortController();
+      autocompleteControllerRef.current = controller;
       const abortTimeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
@@ -132,6 +143,9 @@ export default function LocationSearchControl({
         );
       } finally {
         window.clearTimeout(abortTimeoutId);
+        if (autocompleteControllerRef.current === controller) {
+          autocompleteControllerRef.current = null;
+        }
         if (requestCounterRef.current === currentRequestId) {
           setIsLoadingSuggestions(false);
         }
@@ -140,6 +154,7 @@ export default function LocationSearchControl({
 
     return () => {
       window.clearTimeout(timeoutId);
+      autocompleteControllerRef.current?.abort();
     };
   }, [disabled, query, suppressAutocomplete]);
 
@@ -175,7 +190,9 @@ export default function LocationSearchControl({
     setSuggestions([]);
     setIsLoadingSuggestions(false);
 
+    locationDetailsControllerRef.current?.abort();
     const controller = new AbortController();
+    locationDetailsControllerRef.current = controller;
     const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
@@ -216,6 +233,9 @@ export default function LocationSearchControl({
       );
     } finally {
       window.clearTimeout(timeoutId);
+      if (locationDetailsControllerRef.current === controller) {
+        locationDetailsControllerRef.current = null;
+      }
     }
   };
 

@@ -20,7 +20,10 @@ export async function GET(request: Request) {
     `&key=${key}`
 
   try {
-    const response = await fetch(url, { cache: 'no-store' })
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(4000),
+      next: { revalidate: 86400 },
+    })
     const data = await response.json()
 
     if (!response.ok || data.status !== 'OK' || !data.result?.geometry?.location) {

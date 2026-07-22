@@ -1,35 +1,16 @@
 import { NextResponse } from 'next/server'
 
+import { parseNeedsBasedSearchFilters } from '@/lib/provider-search-filters'
+import {
+  type ProviderSearchRecord,
+  searchProvidersByCoordinates,
+  searchProvidersByPostcode,
+} from '@/lib/provider-search-service'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 type AssistantChatMessage = {
   role: 'assistant' | 'user'
   content: string
-}
-
-type SearchProvider = {
-  id: string
-  google_place_id?: string
-  name?: string
-  category?: string
-  address?: string
-  distance_miles?: number | null
-  google_rating?: {
-    score?: number
-    count?: number
-    source?: string
-  } | null
-  breeds_specialised?: string[]
-  breeds_general_inferred?: string[]
-}
-
-type ProviderRecord = {
-  id: string
-  google_place_id: string | null
-  category: string | null
-  review_summary: string | null
-  breeds_specialised: string[] | null
-  breeds_general_inferred: string[] | null
 }
 
 type AssistantProvider = {
@@ -110,6 +91,33 @@ function dedupeValues(values: Array<string | null | undefined>) {
   return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])]
 }
 
+function mapSearchProvidersToAssistantProviders(rawProviders: ProviderSearchRecord[]) {
+  return rawProviders.slice(0, 5).map((provider) => {
+    const breedTags = dedupeValues([
+      ...(Array.isArray(provider.breeds_specialised) ? provider.breeds_specialised : []),
+      ...(Array.isArray(provider.breeds_general_inferred) ? provider.breeds_general_inferred : []),
+    ])
+
+    return {
+      id: typeof provider.id === 'string' ? provider.id : '',
+      google_place_id: typeof provider.google_place_id === 'string' ? provider.google_place_id : null,
+      name: typeof provider.name === 'string' && provider.name.trim() ? provider.name : 'Unknown business',
+      category: formatCategoryLabel(typeof provider.category === 'string' ? provider.category : null),
+      address: typeof provider.address === 'string' ? provider.address : null,
+      distance_miles: typeof provider.distance_miles === 'number' ? provider.distance_miles : null,
+      google_rating:
+        typeof provider.google_rating?.score === 'number' ? provider.google_rating.score : null,
+      total_review_count:
+        typeof provider.google_rating?.count === 'number' ? provider.google_rating.count : null,
+      review_summary:
+        typeof provider.review_summary === 'string' && provider.review_summary.trim()
+          ? provider.review_summary.trim()
+          : null,
+      breed_tags: breedTags,
+    } satisfies AssistantProvider
+  })
+}
+
 function normalizeMessages(input: unknown): AssistantChatMessage[] {
   if (!Array.isArray(input)) return []
 
@@ -168,116 +176,34 @@ function validateIncomingMessages(input: unknown) {
   }
 }
 
-async function fetchNearbyProviders(request: Request, postcode: string) {
-  const searchUrl = new URL('/api/providers/search', request.url)
-  searchUrl.searchParams.set('postcode', postcode)
+async function fetchNearbyProviders(postcode: string) {
+  const { providers } = await searchProvidersByPostcode({
+    postcode,
+    category: 'pet_care',
+    filters: parseNeedsBasedSearchFilters(new URLSearchParams()),
+  })
 
-  return fetchProvidersFromSearchEndpoint(request, searchUrl)
+  return mapSearchProvidersToAssistantProviders(providers)
 }
 
 async function fetchNearbyProvidersByLocation(
-  request: Request,
   location: string,
   lat: number,
   lng: number
 ) {
-  const searchUrl = new URL('/api/providers/search-by-location', request.url)
-  searchUrl.searchParams.set('location', location)
-  searchUrl.searchParams.set('lat', String(lat))
-  searchUrl.searchParams.set('lng', String(lng))
-
-  return fetchProvidersFromSearchEndpoint(request, searchUrl)
-}
-
-async function fetchProvidersFromSearchEndpoint(request: Request, searchUrl: URL) {
-  const searchResponse = await fetch(searchUrl.toString(), {
-    method: 'GET',
-    headers: {
-      cookie: request.headers.get('cookie') || '',
-    },
-    cache: 'no-store',
+  const { providers } = await searchProvidersByCoordinates({
+    coords: { lat, lng },
+    category: 'pet_care',
+    filters: parseNeedsBasedSearchFilters(
+      new URLSearchParams({
+        location,
+        lat: String(lat),
+        lng: String(lng),
+      })
+    ),
   })
 
-  const searchPayload = await searchResponse.json()
-
-  if (!searchResponse.ok) {
-    const errorMessage =
-      searchPayload && typeof searchPayload.error === 'string'
-        ? searchPayload.error
-        : 'Failed to fetch nearby providers'
-    throw new Error(errorMessage)
-  }
-
-  const rawProviders = Array.isArray(searchPayload.pf_providers)
-    ? (searchPayload.pf_providers as SearchProvider[]).slice(0, 5)
-    : []
-
-  if (rawProviders.length === 0) {
-    return [] as AssistantProvider[]
-  }
-
-  const supabase = createAdminClient()
-  const internalIds = dedupeValues(rawProviders.map((provider) => provider.id))
-  const googlePlaceIds = dedupeValues(rawProviders.map((provider) => provider.google_place_id))
-
-  const providerRecords: ProviderRecord[] = []
-
-  if (internalIds.length > 0) {
-    const { data } = await supabase
-      .from('pf_providers')
-      .select('id, google_place_id, category, review_summary, breeds_specialised, breeds_general_inferred')
-      .in('id', internalIds)
-
-    providerRecords.push(...((data || []) as ProviderRecord[]))
-  }
-
-  if (googlePlaceIds.length > 0) {
-    const { data } = await supabase
-      .from('pf_providers')
-      .select('id, google_place_id, category, review_summary, breeds_specialised, breeds_general_inferred')
-      .in('google_place_id', googlePlaceIds)
-
-    providerRecords.push(...((data || []) as ProviderRecord[]))
-  }
-
-  const byInternalId = new Map<string, ProviderRecord>()
-  const byPlaceId = new Map<string, ProviderRecord>()
-
-  for (const record of providerRecords) {
-    if (!byInternalId.has(record.id)) {
-      byInternalId.set(record.id, record)
-    }
-
-    if (record.google_place_id && !byPlaceId.has(record.google_place_id)) {
-      byPlaceId.set(record.google_place_id, record)
-    }
-  }
-
-  return rawProviders.map((provider) => {
-    const dbMatch =
-      (provider.google_place_id ? byPlaceId.get(provider.google_place_id) : null) ||
-      byInternalId.get(provider.id) ||
-      null
-    const breedTags = dedupeValues([
-      ...(dbMatch?.breeds_specialised || provider.breeds_specialised || []),
-      ...(dbMatch?.breeds_general_inferred || provider.breeds_general_inferred || []),
-    ])
-
-    return {
-      id: provider.id,
-      google_place_id: provider.google_place_id || null,
-      name: provider.name || 'Unknown business',
-      category: formatCategoryLabel(dbMatch?.category || provider.category),
-      address: provider.address || null,
-      distance_miles: typeof provider.distance_miles === 'number' ? provider.distance_miles : null,
-      google_rating:
-        typeof provider.google_rating?.score === 'number' ? provider.google_rating.score : null,
-      total_review_count:
-        typeof provider.google_rating?.count === 'number' ? provider.google_rating.count : null,
-      review_summary: dbMatch?.review_summary || null,
-      breed_tags: breedTags,
-    } satisfies AssistantProvider
-  })
+  return mapSearchProvidersToAssistantProviders(providers)
 }
 
 function buildLiveDetailsUrl(request: Request, placeId: string) {
@@ -714,8 +640,8 @@ export async function POST(request: Request) {
     }
 
     const nearbyProviders = postcode
-      ? await fetchNearbyProviders(request, postcode)
-      : await fetchNearbyProvidersByLocation(request, location!, lat!, lng!)
+      ? await fetchNearbyProviders(postcode)
+      : await fetchNearbyProvidersByLocation(location!, lat!, lng!)
 
     if (nearbyProviders.length === 0) {
       return NextResponse.json({
