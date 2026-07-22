@@ -329,16 +329,19 @@ export default function ProviderProfile({
     providerSnapshot,
     liveDetailsSnapshot,
     reviewsSnapshot,
+    trustSnapshotSnapshot,
   }: {
     placeId: string
     providerSnapshot?: ProviderProfileRecord
     liveDetailsSnapshot?: LiveDetailsRecord
     reviewsSnapshot?: NativeReview[]
+    trustSnapshotSnapshot?: TrustSnapshotPayload
   }) => {
     primeProviderSessionCache(placeId, {
       providerSnapshot,
       liveDetails: liveDetailsSnapshot,
       reviewsSnapshot,
+      trustSnapshot: trustSnapshotSnapshot,
     })
   }
 
@@ -466,6 +469,7 @@ export default function ProviderProfile({
     const cachedProvider = (cachedProfile?.providerSnapshot as ProviderProfileRecord | undefined) || null
     const cachedLiveDetails = (cachedProfile?.liveDetails as LiveDetailsRecord | undefined) || null
     const cachedReviews = (cachedProfile?.reviewsSnapshot as NativeReview[] | undefined) || null
+    const cachedTrustSnapshot = (cachedProfile?.trustSnapshot as TrustSnapshotPayload | undefined) || null
     const hasRenderableCachedProfile = Boolean(cachedProvider)
 
     if (hasRenderableCachedProfile) {
@@ -482,6 +486,12 @@ export default function ProviderProfile({
 
       if (cachedReviews) {
         setReviews(cachedReviews)
+      }
+
+      if (cachedTrustSnapshot) {
+        setTrustSnapshot(cachedTrustSnapshot)
+        setIsTrustSnapshotLoading(false)
+        setHasTrustSnapshotError(false)
       }
 
       setLoading(false)
@@ -531,15 +541,15 @@ export default function ProviderProfile({
         (dbProvider?.google_place_id && looksLikeGooglePlaceId(dbProvider.google_place_id)) ||
           looksLikeGooglePlaceId(canonicalPlaceId)
       )
-      const canonicalCachedProfile = (
-        getProviderSessionCache(canonicalPlaceId)?.providerSnapshot as ProviderProfileRecord | undefined
-      ) || cachedProvider
-      const canonicalCachedLiveDetails = (
-        getProviderSessionCache(canonicalPlaceId)?.liveDetails as LiveDetailsRecord | undefined
-      ) || cachedLiveDetails
-      const canonicalCachedReviews = (
-        getProviderSessionCache(canonicalPlaceId)?.reviewsSnapshot as NativeReview[] | undefined
-      ) || cachedReviews
+      const canonicalCachedEntry = getProviderSessionCache(canonicalPlaceId)
+      const canonicalCachedProfile =
+        (canonicalCachedEntry?.providerSnapshot as ProviderProfileRecord | undefined) || cachedProvider
+      const canonicalCachedLiveDetails =
+        (canonicalCachedEntry?.liveDetails as LiveDetailsRecord | undefined) || cachedLiveDetails
+      const canonicalCachedReviews =
+        (canonicalCachedEntry?.reviewsSnapshot as NativeReview[] | undefined) || cachedReviews
+      const canonicalCachedTrustSnapshot =
+        (canonicalCachedEntry?.trustSnapshot as TrustSnapshotPayload | undefined) || cachedTrustSnapshot
 
       if (canonicalCachedProfile) {
         setProvider(canonicalCachedProfile)
@@ -554,6 +564,12 @@ export default function ProviderProfile({
         setReviews(canonicalCachedReviews)
       }
 
+      if (canonicalCachedTrustSnapshot) {
+        setTrustSnapshot(canonicalCachedTrustSnapshot)
+        setIsTrustSnapshotLoading(false)
+        setHasTrustSnapshotError(false)
+      }
+
       let data: LiveDetailsRecord = canonicalCachedLiveDetails ? { ...canonicalCachedLiveDetails } : {}
       const shouldHydrateLiveDetails =
         !canonicalCachedLiveDetails ||
@@ -563,7 +579,7 @@ export default function ProviderProfile({
         typeof canonicalCachedLiveDetails.user_ratings_total !== 'number'
 
       if (shouldHydrateLiveDetails && canFetchLiveDetails) {
-        const detailsUrl = `/api/providers/${encodeURIComponent(canonicalPlaceId)}/live-details?include_ai_summary=1`
+        const detailsUrl = `/api/providers/${encodeURIComponent(canonicalPlaceId)}/live-details`
         let res: Response | null = null
         try {
           res = await fetch(detailsUrl, { signal: AbortSignal.timeout(15000) })
@@ -731,6 +747,14 @@ export default function ProviderProfile({
         setTrustSnapshot(savedTrustSnapshot)
         setIsTrustSnapshotLoading(false)
         setHasTrustSnapshotError(false)
+        syncProviderSessionCache({
+          placeId: resolvedProvider.google_place_id || canonicalPlaceId,
+          trustSnapshotSnapshot: savedTrustSnapshot,
+        })
+      } else if (canonicalCachedTrustSnapshot) {
+        setTrustSnapshot(canonicalCachedTrustSnapshot)
+        setIsTrustSnapshotLoading(false)
+        setHasTrustSnapshotError(false)
       } else {
         setIsTrustSnapshotLoading(true)
         setHasTrustSnapshotError(false)
@@ -745,7 +769,7 @@ export default function ProviderProfile({
           if (trustRes.ok && trustRes.headers.get('content-type')?.includes('application/json')) {
             const trustPayload = (await trustRes.json()) as TrustSnapshotPayload
             if (!trustPayload.error) {
-              setTrustSnapshot({
+              const normalizedTrustSnapshot = {
                 trust_badge: trustPayload.trust_badge,
                 audit_reason: trustPayload.audit_reason,
                 safety_flags: Array.isArray(trustPayload.safety_flags) ? trustPayload.safety_flags : [],
@@ -753,8 +777,14 @@ export default function ProviderProfile({
                 overall_summary: trustPayload.overall_summary,
                 ai_version: trustPayload.ai_version ?? null,
                 refreshed: Boolean(trustPayload.refreshed),
-              })
+              } satisfies TrustSnapshotPayload
+
+              setTrustSnapshot(normalizedTrustSnapshot)
               setHasTrustSnapshotError(false)
+              syncProviderSessionCache({
+                placeId: resolvedProvider.google_place_id || canonicalPlaceId,
+                trustSnapshotSnapshot: normalizedTrustSnapshot,
+              })
             } else {
               setHasTrustSnapshotError(true)
             }

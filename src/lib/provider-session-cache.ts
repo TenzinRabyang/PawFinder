@@ -19,6 +19,7 @@ type ProviderSessionCacheEntry = {
   liveDetails?: CacheableLiveDetails
   reviewsSnapshot?: CacheableRecord[]
   featuredEnrichment?: CacheableFeaturedEnrichment
+  trustSnapshot?: CacheableRecord
 }
 
 type ProviderSessionCacheUpdate = Partial<ProviderSessionCacheEntry>
@@ -49,6 +50,9 @@ function mergeCacheEntry(
     featuredEnrichment: nextEntry.featuredEnrichment
       ? { ...(currentEntry?.featuredEnrichment || {}), ...nextEntry.featuredEnrichment }
       : currentEntry?.featuredEnrichment,
+    trustSnapshot: nextEntry.trustSnapshot
+      ? { ...(currentEntry?.trustSnapshot || {}), ...nextEntry.trustSnapshot }
+      : currentEntry?.trustSnapshot,
   }
 }
 
