@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
@@ -119,6 +118,12 @@ type LiveDetailsRecord = {
 type EnsureTagsResponse = {
   provider?: ProviderProfileRecord
   analysis_status?: BreedAnalysisStatus | 'category_unresolved'
+  error?: string
+}
+
+type ReviewSubmissionResponse = {
+  success?: boolean
+  review?: NativeReview
   error?: string
 }
 
@@ -435,6 +440,26 @@ export default function ProviderProfile({
       setBreedTagStatus('unavailable')
     }
   }, [])
+
+  const appendSubmittedReview = useCallback(
+    (submittedReview: NativeReview) => {
+      setReviews((currentReviews) => {
+        const nextReviews = [submittedReview, ...currentReviews.filter((review) => review.id !== submittedReview.id)]
+
+        if (provider?.google_place_id) {
+          syncProviderSessionCache({
+            placeId: provider.google_place_id,
+            providerSnapshot: provider,
+            liveDetailsSnapshot: liveDetails || undefined,
+            reviewsSnapshot: nextReviews,
+          })
+        }
+
+        return nextReviews
+      })
+    },
+    [liveDetails, provider]
+  )
 
   const fetchData = useCallback(async () => {
     const cachedProfile = getProviderSessionCache(id)
@@ -784,6 +809,8 @@ export default function ProviderProfile({
     })
 
     if (res.ok) {
+      const responseData = (await res.json()) as ReviewSubmissionResponse
+
       setReviewSubmitState('saved')
       setShowReviewForm(false)
       setReviewForm({
@@ -793,7 +820,10 @@ export default function ProviderProfile({
         comment: '',
         temperament_tags: []
       })
-      void fetchData() // refresh
+
+      if (responseData.review) {
+        appendSubmittedReview(responseData.review)
+      }
     } else {
       setReviewSubmitState('error')
       alert('Failed to submit review')
@@ -861,15 +891,10 @@ export default function ProviderProfile({
   }, [])
 
   const visibleGoogleReviews = (liveDetails?.reviews ?? []).slice(0, 5)
-
-  useEffect(() => {
-    if (visibleGoogleReviews.length === 0) {
-      setActiveGoogleReviewIndex(0)
-      return
-    }
-
-    setActiveGoogleReviewIndex((current) => Math.min(current, visibleGoogleReviews.length - 1))
-  }, [visibleGoogleReviews.length])
+  const safeActiveGoogleReviewIndex =
+    visibleGoogleReviews.length === 0
+      ? 0
+      : Math.min(activeGoogleReviewIndex, visibleGoogleReviews.length - 1)
 
   if (loading) {
     return (
@@ -1273,7 +1298,7 @@ export default function ProviderProfile({
                           <span
                             key={`google-review-dot-${index}`}
                             className={`h-2 rounded-full transition-all ${
-                              index === activeGoogleReviewIndex
+                              index === safeActiveGoogleReviewIndex
                                 ? 'w-6 bg-[#C97C5D]'
                                 : 'w-2 bg-[#D9C8A6]'
                             }`}
@@ -1285,26 +1310,26 @@ export default function ProviderProfile({
 
                     <div className="mt-5">
                       <div className="rounded-[1.6rem] border border-[#E7DDD1] bg-[#FFFDFC] p-5 shadow-[0_16px_36px_-30px_rgba(60,48,35,0.22)]">
-                        {visibleGoogleReviews[activeGoogleReviewIndex] ? (
+                        {visibleGoogleReviews[safeActiveGoogleReviewIndex] ? (
                           <>
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <div className="font-semibold text-[#2F312E]">
-                                  {visibleGoogleReviews[activeGoogleReviewIndex].author_name || 'Google review'}
+                                  {visibleGoogleReviews[safeActiveGoogleReviewIndex].author_name || 'Google review'}
                                 </div>
                                 <div className="mt-1 text-xs uppercase tracking-[0.16em] text-[#938E86]">
-                                  {visibleGoogleReviews[activeGoogleReviewIndex].relative_time_description || 'Recent'}
+                                  {visibleGoogleReviews[safeActiveGoogleReviewIndex].relative_time_description || 'Recent'}
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
                                 <span className="rounded-full bg-[#FBF3E3] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7A5A19]">
-                                  {activeGoogleReviewIndex + 1}/{visibleGoogleReviews.length}
+                                  {safeActiveGoogleReviewIndex + 1}/{visibleGoogleReviews.length}
                                 </span>
                                 <div className="collar-tag collar-tag-small text-sm font-semibold">
                                   <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/85 text-[10px] font-black text-[#6A5121] shadow-sm">
                                     G
                                   </span>
-                                  {renderFilledStars(visibleGoogleReviews[activeGoogleReviewIndex].rating, {
+                                  {renderFilledStars(visibleGoogleReviews[safeActiveGoogleReviewIndex].rating, {
                                     sizeClassName: 'h-3.5 w-3.5',
                                     filledClassName: 'fill-amber-400 text-amber-400',
                                     emptyClassName: 'text-[#D9C8A6]',
@@ -1313,7 +1338,7 @@ export default function ProviderProfile({
                               </div>
                             </div>
                             <p className="mt-4 text-sm leading-7 text-[#5D5A54]">
-                              {visibleGoogleReviews[activeGoogleReviewIndex].text || 'No review text provided.'}
+                              {visibleGoogleReviews[safeActiveGoogleReviewIndex].text || 'No review text provided.'}
                             </p>
                           </>
                         ) : null}
