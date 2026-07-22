@@ -9,6 +9,7 @@ type RecoveryAwareProvider = {
   address?: string | null
   phone?: string | null
   website?: string | null
+  review_summary?: string | null
   place_id_refresh_attempt_count?: number | null
   place_id_refresh_exhausted?: boolean | null
 }
@@ -24,7 +25,7 @@ type GooglePlaceCandidate = {
 
 type GooglePlaceDetailsResponse = {
   status?: string
-  result?: Record<string, any>
+  result?: Record<string, unknown>
   candidates?: GooglePlaceCandidate[]
   results?: GooglePlaceCandidate[]
   error_message?: string
@@ -33,7 +34,7 @@ type GooglePlaceDetailsResponse = {
 export type PlaceDetailsResolution =
   | {
       status: 'OK'
-      result: Record<string, any>
+      result: Record<string, unknown>
       requestedPlaceId: string
       resolvedPlaceId: string
       healed: boolean
@@ -96,7 +97,7 @@ function isMissingPlaceIdRefreshColumnError(error: { code?: string; message?: st
 async function persistProviderPlaceIdRefreshState(
   supabase: SupabaseClient,
   providerId: string,
-  updatePayload: Record<string, any>
+  updatePayload: Record<string, unknown>
 ) {
   const { error } = await supabase.from('pf_providers').update(updatePayload).eq('id', providerId)
 
@@ -118,7 +119,7 @@ async function persistProviderPlaceIdRefreshState(
 
 export async function getProviderForPlaceIdRecovery(supabase: SupabaseClient, googlePlaceId: string) {
   const selectWithRefreshState =
-    'id, google_place_id, name, address, phone, website, place_id_refresh_attempt_count, place_id_refresh_exhausted'
+    'id, google_place_id, name, address, phone, website, review_summary, place_id_refresh_attempt_count, place_id_refresh_exhausted'
 
   const query = () =>
     supabase.from('pf_providers').select(selectWithRefreshState).eq('google_place_id', googlePlaceId).maybeSingle()
@@ -131,7 +132,7 @@ export async function getProviderForPlaceIdRecovery(supabase: SupabaseClient, go
 
   return supabase
     .from('pf_providers')
-    .select('id, google_place_id, name, address, phone, website')
+    .select('id, google_place_id, name, address, phone, website, review_summary')
     .eq('google_place_id', googlePlaceId)
     .maybeSingle()
 }
@@ -251,7 +252,7 @@ export async function resolvePlaceDetailsWithAutoHeal({
   googleApiKey,
   provider,
   supabase,
-  source,
+  source: _source,
 }: {
   requestedPlaceId: string
   fields: string
@@ -260,6 +261,8 @@ export async function resolvePlaceDetailsWithAutoHeal({
   supabase?: SupabaseClient
   source: string
 }): Promise<PlaceDetailsResolution> {
+  void _source
+
   const detailsResponse = await fetchPlaceDetailsById(requestedPlaceId, fields, googleApiKey)
 
   if (detailsResponse.status === 'OK' && detailsResponse.result) {

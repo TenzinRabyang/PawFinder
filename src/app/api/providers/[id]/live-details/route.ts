@@ -4,6 +4,7 @@ import {
   getProviderForPlaceIdRecovery,
   resolvePlaceDetailsWithAutoHeal,
 } from '@/lib/provider-place-id-recovery'
+import { summarizeGoogleReviews } from '@/lib/google-review-summary'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 type LiveDetailsReview = {
@@ -68,39 +69,6 @@ function mapLiveDetailsPayload(result: Record<string, unknown>, fallbackPlaceId:
   }
 }
 
-async function summarizeReviewsWithDeepSeek(name: string, reviews: Array<{ rating?: number; text?: string; relative_time_description?: string }>) {
-  const key = process.env.DEEPSEEK_API_KEY
-  if (!key || reviews.length === 0) return null
-
-  const prompt = `
-    Write a short 2-3 sentence summary of customer feedback for "${name}".
-    Focus on service quality, pet handling, friendliness, and trust signals.
-    Use only the review content provided. Stay factual and concise.
-
-    Reviews:
-    ${JSON.stringify(reviews.slice(0, 3))}
-  `
-
-  try {
-    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    const data = await res.json()
-    return data.choices?.[0]?.message?.content?.trim() || null
-  } catch {
-    return null
-  }
-}
-
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const { searchParams } = new URL(request.url)
@@ -142,7 +110,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     text: review.text || undefined,
     relative_time_description: review.relative_time_description || undefined,
   }))
-  const ai_summary = await summarizeReviewsWithDeepSeek(payload.name || 'this business', reviews)
+  const ai_summary = await summarizeGoogleReviews({
+    placeId: payload.place_id || id,
+    businessName: payload.name || 'this business',
+    reviews,
+    existingSummary: provider?.review_summary,
+    maxReviews: 3,
+    timeoutMs: 6000,
+  })
 
   return NextResponse.json({
     ...payload,
