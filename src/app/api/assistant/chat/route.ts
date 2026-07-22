@@ -207,18 +207,21 @@ async function fetchNearbyProvidersByLocation(
   return mapSearchProvidersToAssistantProviders(providers)
 }
 
-function buildLiveDetailsUrl(request: Request, placeId: string) {
+function buildLiveDetailsUrl(request: Request, placeId: string, includeAiSummary = true) {
   const liveDetailsUrl = new URL(`/api/providers/${encodeURIComponent(placeId)}/live-details`, request.url)
-  liveDetailsUrl.searchParams.set('include_ai_summary', '1')
+  if (includeAiSummary) {
+    liveDetailsUrl.searchParams.set('include_ai_summary', '1')
+  }
   return liveDetailsUrl
 }
 
 async function fetchLiveDetails(
   request: Request,
   placeId: string,
+  includeAiSummary = true,
   timeoutMs?: number
 ): Promise<LiveDetailsResponse> {
-  const liveDetailsResponse = await fetch(buildLiveDetailsUrl(request, placeId).toString(), {
+  const liveDetailsResponse = await fetch(buildLiveDetailsUrl(request, placeId, includeAiSummary).toString(), {
     method: 'GET',
     cache: 'no-store',
     headers: {
@@ -310,39 +313,33 @@ function kickoffBackgroundEnrichment(
 
   void (async () => {
     let liveDetails: LiveDetailsResponse | null = null
+    if (options.needsReviewSummary || options.needsBreedTags) {
+      try {
+        liveDetails = await fetchLiveDetails(request, placeId, options.needsReviewSummary)
+        const aiSummary =
+          typeof liveDetails.ai_summary === 'string' && liveDetails.ai_summary.trim()
+            ? liveDetails.ai_summary.trim()
+            : null
 
-    await Promise.allSettled([
-      options.needsReviewSummary || options.needsBreedTags
-        ? (async () => {
-            try {
-              liveDetails = await fetchLiveDetails(request, placeId)
-              const aiSummary =
-                typeof liveDetails.ai_summary === 'string' && liveDetails.ai_summary.trim()
-                  ? liveDetails.ai_summary.trim()
-                  : null
+        if (options.needsReviewSummary && aiSummary) {
+          await persistReviewSummary(
+            supabaseAdmin,
+            liveDetails.place_id || provider.google_place_id || placeId,
+            aiSummary
+          )
+        }
+      } catch {
+        console.warn('[assistant-chat] background live-details enrichment failed')
+      }
+    }
 
-              if (options.needsReviewSummary && aiSummary) {
-                await persistReviewSummary(
-                  supabaseAdmin,
-                  liveDetails.place_id || provider.google_place_id || placeId,
-                  aiSummary
-                )
-              }
-            } catch {
-              console.warn('[assistant-chat] background live-details enrichment failed')
-            }
-          })()
-        : Promise.resolve(),
-      options.needsBreedTags
-        ? (async () => {
-            try {
-              await triggerEnsureTags(request, provider, placeId, liveDetails)
-            } catch {
-              console.warn('[assistant-chat] background ensure-tags enrichment failed')
-            }
-          })()
-        : Promise.resolve(),
-    ])
+    if (options.needsBreedTags && liveDetails) {
+      try {
+        await triggerEnsureTags(request, provider, placeId, liveDetails)
+      } catch {
+        console.warn('[assistant-chat] background ensure-tags enrichment failed')
+      }
+    }
   })()
 }
 
@@ -366,20 +363,28 @@ async function enrichProviderIfNeeded(request: Request, provider: AssistantProvi
   let shouldContinueInBackground = false
 
   try {
-    await Promise.all([
-      needsReviewSummary || needsBreedTags
-        ? fetchLiveDetails(request, placeId, RAPID_ENRICHMENT_TIMEOUT_MS).then((payload) => {
-            liveDetails = payload
-            aiSummary =
-              typeof payload.ai_summary === 'string' && payload.ai_summary.trim()
-                ? payload.ai_summary.trim()
-                : aiSummary
-          })
-        : Promise.resolve(),
-      needsBreedTags
-        ? triggerEnsureTags(request, provider, placeId, null, RAPID_ENRICHMENT_TIMEOUT_MS)
-        : Promise.resolve(),
-    ])
+    if (needsReviewSummary || needsBreedTags) {
+      liveDetails = await fetchLiveDetails(
+        request,
+        placeId,
+        needsReviewSummary,
+        RAPID_ENRICHMENT_TIMEOUT_MS
+      )
+      aiSummary =
+        typeof liveDetails.ai_summary === 'string' && liveDetails.ai_summary.trim()
+          ? liveDetails.ai_summary.trim()
+          : aiSummary
+    }
+
+    if (needsBreedTags && liveDetails) {
+      await triggerEnsureTags(
+        request,
+        provider,
+        placeId,
+        liveDetails,
+        RAPID_ENRICHMENT_TIMEOUT_MS
+      )
+    }
   } catch {
     shouldContinueInBackground = true
     console.warn('[assistant-chat] rapid provider enrichment fell back to basic details')

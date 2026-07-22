@@ -1,6 +1,24 @@
 import { NextResponse } from 'next/server'
 import { parseNeedsBasedSearchFilters } from '@/lib/provider-search-filters'
 import { searchProvidersByCoordinates } from '@/lib/provider-search-service'
+import { createClient } from '@/utils/supabase/server'
+
+async function isAdminForceRefreshAllowed(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const adminEmails = (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+
+  if (adminEmails.length === 0) {
+    return false
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  return Boolean(user?.email && adminEmails.includes(user.email.toLowerCase()))
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -15,6 +33,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    if (forceRefresh) {
+      const supabase = await createClient()
+      const isAdmin = await isAdminForceRefreshAllowed(supabase)
+      if (!isAdmin) {
+        return NextResponse.json({ error: 'Force refresh is restricted to admin users' }, { status: 403 })
+      }
+    }
+
     const { providers, searchOrigin, cache } = await searchProvidersByCoordinates({
       coords: { lat, lng },
       category,
