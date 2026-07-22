@@ -5,6 +5,7 @@ import {
   resolvePlaceDetailsWithAutoHeal,
 } from '@/lib/provider-place-id-recovery'
 import { summarizeGoogleReviews } from '@/lib/google-review-summary'
+import { enforceRouteRateLimit } from '@/lib/server-rate-limit'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 type LiveDetailsReview = {
@@ -70,6 +71,17 @@ function mapLiveDetailsPayload(result: Record<string, unknown>, fallbackPlaceId:
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rateLimitResponse = enforceRouteRateLimit(request, {
+    key: 'provider-live-details',
+    limit: 30,
+    windowMs: 5 * 60 * 1000,
+    message: 'Live provider details are being requested too often right now. Please wait a moment and try again.',
+  })
+
+  if (rateLimitResponse) {
+    return rateLimitResponse
+  }
+
   const { id } = await params
   const { searchParams } = new URL(request.url)
   const includeAiSummary = searchParams.get('include_ai_summary') === '1'

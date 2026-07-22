@@ -6,6 +6,7 @@ import {
   searchProvidersByCoordinates,
   searchProvidersByPostcode,
 } from '@/lib/provider-search-service'
+import { buildForwardedClientHeaders, enforceRouteRateLimit } from '@/lib/server-rate-limit'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 type AssistantChatMessage = {
@@ -222,6 +223,7 @@ async function fetchLiveDetails(
     cache: 'no-store',
     headers: {
       cookie: request.headers.get('cookie') || '',
+      ...buildForwardedClientHeaders(request),
     },
     signal: typeof timeoutMs === 'number' ? AbortSignal.timeout(timeoutMs) : undefined,
   })
@@ -247,6 +249,7 @@ async function triggerEnsureTags(
     headers: {
       'Content-Type': 'application/json',
       cookie: request.headers.get('cookie') || '',
+      ...buildForwardedClientHeaders(request),
     },
     signal: typeof timeoutMs === 'number' ? AbortSignal.timeout(timeoutMs) : undefined,
     body: JSON.stringify({
@@ -573,6 +576,17 @@ async function getAssistantReply(
 
 export async function POST(request: Request) {
   try {
+    const rateLimitResponse = enforceRouteRateLimit(request, {
+      key: 'assistant-chat',
+      limit: 18,
+      windowMs: 5 * 60 * 1000,
+      message: 'You have sent too many assistant requests in a short time. Please wait a moment and try again.',
+    })
+
+    if (rateLimitResponse) {
+      return rateLimitResponse
+    }
+
     let body: unknown
 
     try {

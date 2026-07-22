@@ -15,6 +15,7 @@ import {
   sanitizeTrustReviewInputs,
   type TrustEvalOutput,
 } from "@/lib/trust-eval";
+import { enforceRouteRateLimit } from "@/lib/server-rate-limit";
 import { createAdminClient } from "@/utils/supabase/admin";
 
 type ProviderTrustRecord = {
@@ -289,6 +290,17 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const rateLimitResponse = enforceRouteRateLimit(request, {
+      key: "provider-trust-snapshot",
+      limit: 24,
+      windowMs: 5 * 60 * 1000,
+      message: "This trust summary is being refreshed too often right now. Please wait a moment and try again.",
+    });
+
+    if (rateLimitResponse) {
+      return rateLimitResponse;
+    }
+
     const { id } = await params;
     const { searchParams } = new URL(request.url);
     const fallbackPlaceId = searchParams.get("place_id")?.trim() || null;

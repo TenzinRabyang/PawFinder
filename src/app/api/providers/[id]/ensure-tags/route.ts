@@ -4,6 +4,7 @@ import { resolveProviderCategory, resolvePersistableProviderCategory } from '@/l
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 import { validateSameOriginRequest } from '@/lib/csrf'
+import { enforceRouteRateLimit } from '@/lib/server-rate-limit'
 import { persistProviderAiTags } from '@/lib/persist-provider-ai-tags'
 import { inferAnimalsFromProviderPhotos } from '@/lib/provider-photo-inference'
 import {
@@ -162,6 +163,17 @@ function mergeUniqueValues(...values: Array<string[] | null | undefined>) {
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const rateLimitResponse = enforceRouteRateLimit(request, {
+      key: 'provider-ensure-tags',
+      limit: 8,
+      windowMs: 10 * 60 * 1000,
+      message: 'Provider analysis is being refreshed too often right now. Please wait a few minutes and try again.',
+    })
+
+    if (rateLimitResponse) {
+      return rateLimitResponse
+    }
+
     const csrfError = validateSameOriginRequest(request)
     if (csrfError) {
       return NextResponse.json({ error: csrfError }, { status: 403 })
