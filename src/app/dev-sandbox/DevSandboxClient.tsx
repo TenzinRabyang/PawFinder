@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { TrustSafetyFlag } from "@/lib/trust-eval";
 
 type ScenarioOption = {
   scenarioId: string;
@@ -11,13 +12,29 @@ type ScenarioOption = {
 type TrustAnalysisResult = {
   trust_badge: "GREEN" | "YELLOW" | "RED" | "GRAY";
   audit_reason: string;
-  safety_flags: string[];
+  safety_flags: TrustSafetyFlag[];
   highlights: string[];
 };
 
 type DevSandboxClientProps = {
   scenarios: ScenarioOption[];
 };
+
+function formatSafetyCategoryLabel(category: string) {
+  return category
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getConfidenceLabel(flag: TrustSafetyFlag) {
+  if (flag.confidence === "confirmed") {
+    return flag.excerpt_count >= 2 ? "Confirmed by multiple reviews" : "Confirmed severe-harm report";
+  }
+
+  return "Single report - unverified";
+}
 
 const BADGE_STYLES: Record<
   TrustAnalysisResult["trust_badge"],
@@ -223,17 +240,30 @@ export default function DevSandboxClient({ scenarios }: DevSandboxClientProps) {
 
             <div className="rounded-[1.25rem] border border-[#EEE5D6] bg-[#FAF7F1] p-4">
               <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-[#7A7F74]">
-                Safety Flag Quotes
+                Safety Evidence
               </p>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 space-y-3">
                 {analysis.safety_flags.length > 0 ? (
                   analysis.safety_flags.map((flag) => (
-                    <span
-                      key={flag}
-                      className={`rounded-full border px-3 py-2 text-xs font-semibold ${badgeMeta.chipClassName}`}
-                    >
-                      "{flag}"
-                    </span>
+                    <div key={`${flag.category}-${flag.confidence}`} className="rounded-[1rem] border border-[#E7DDCB] bg-white px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-3 py-2 text-xs font-semibold ${badgeMeta.chipClassName}`}>
+                          {formatSafetyCategoryLabel(flag.category)}
+                        </span>
+                        <span className="text-xs font-medium text-[#6B725E]">{getConfidenceLabel(flag)}</span>
+                      </div>
+                      {flag.excerpts.length > 0 ? (
+                        <ul className="mt-3 space-y-2 text-sm leading-6 text-[#465046]">
+                          {flag.excerpts.map((excerpt) => (
+                            <li key={`${flag.category}-${excerpt}`} className="rounded-[0.9rem] border border-[#EFE4D2] bg-[#FAF7F1] px-3 py-2">
+                              &ldquo;{excerpt}&rdquo;
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-3 text-sm text-[#5D665B]">No supporting excerpt was returned.</p>
+                      )}
+                    </div>
                   ))
                 ) : (
                   <span className="text-sm text-[#5D665B]">No direct safety flag quotes detected.</span>

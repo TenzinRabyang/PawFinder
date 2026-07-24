@@ -12,6 +12,7 @@ import {
   CURRENT_AI_VERSION,
   type DeterministicBaselineBadge,
   evaluateTrustReviews,
+  normalizeTrustSafetyFlags,
   sanitizeTrustReviewInputs,
   type TrustEvalOutput,
 } from "@/lib/trust-eval";
@@ -38,10 +39,6 @@ type NativeReviewRecord = {
 
 function isUuidLike(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
-}
-
-function normalizeStringArray(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function buildRouteFallbackSnapshot(reason?: string): TrustEvalOutput {
@@ -73,8 +70,10 @@ function getCachedTrustPayload(provider: ProviderTrustRecord): TrustEvalOutput |
     return {
       trust_badge: provider.trust_badge as TrustEvalOutput["trust_badge"],
       audit_reason: provider.audit_reason,
-      safety_flags: normalizeStringArray(provider.safety_flags),
-      highlights: normalizeStringArray(provider.highlights),
+      safety_flags: normalizeTrustSafetyFlags(provider.safety_flags),
+      highlights: Array.isArray(provider.highlights)
+        ? provider.highlights.filter((item): item is string => typeof item === "string")
+        : [],
       overall_summary: provider.overall_summary,
     };
   }

@@ -1,7 +1,7 @@
 import ProviderProfileClient, {
   type InitialTrustSnapshot,
 } from './ProviderProfileClient'
-import { CURRENT_AI_VERSION } from '@/lib/trust-eval'
+import { CURRENT_AI_VERSION, normalizeTrustSafetyFlags } from '@/lib/trust-eval'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 function isUuidLike(value: string) {
@@ -33,9 +33,7 @@ async function getInitialTrustSnapshot(id: string): Promise<InitialTrustSnapshot
   return {
     trust_badge: data.trust_badge as InitialTrustSnapshot['trust_badge'],
     audit_reason: data.audit_reason,
-    safety_flags: Array.isArray(data.safety_flags)
-      ? data.safety_flags.filter((item): item is string => typeof item === 'string')
-      : [],
+    safety_flags: normalizeTrustSafetyFlags(data.safety_flags),
     highlights: Array.isArray(data.highlights)
       ? data.highlights.filter((item): item is string => typeof item === 'string')
       : [],

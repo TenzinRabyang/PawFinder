@@ -10,7 +10,11 @@ import ActionTriggerToast, {
   type ProviderContactActionType,
 } from '@/components/provider/ActionTriggerToast'
 import TrustAndReviewsCard, { type TrustBadgeValue } from '@/components/ui/TrustAndReviewsCard'
-import { CURRENT_AI_VERSION } from '@/lib/trust-eval'
+import {
+  CURRENT_AI_VERSION,
+  normalizeTrustSafetyFlags,
+  type TrustSafetyFlag,
+} from '@/lib/trust-eval'
 import { resolveProviderCategory } from '@/lib/provider-category'
 import { getSafePublicExternalUrl } from '@/lib/public-url'
 import {
@@ -63,7 +67,7 @@ type ProviderProfileRecord = {
   } | null
   trust_badge?: TrustBadgeValue | null
   audit_reason?: string | null
-  safety_flags?: string[] | null
+  safety_flags?: TrustSafetyFlag[] | null
   highlights?: string[] | null
   overall_summary?: string | null
   ai_version?: number | null
@@ -130,7 +134,7 @@ type ReviewSubmissionResponse = {
 type TrustSnapshotPayload = {
   trust_badge: TrustBadgeValue
   audit_reason: string
-  safety_flags: string[]
+  safety_flags: TrustSafetyFlag[]
   highlights: string[]
   overall_summary: string
   ai_version?: number | null
@@ -241,7 +245,7 @@ export default function ProviderProfile({
     return {
       trust_badge: record.trust_badge,
       audit_reason: record.audit_reason,
-      safety_flags: Array.isArray(record.safety_flags) ? record.safety_flags : [],
+      safety_flags: normalizeTrustSafetyFlags(record.safety_flags),
       highlights: Array.isArray(record.highlights) ? record.highlights : [],
       overall_summary: record.overall_summary,
       ai_version: record.ai_version,
@@ -772,7 +776,7 @@ export default function ProviderProfile({
               const normalizedTrustSnapshot = {
                 trust_badge: trustPayload.trust_badge,
                 audit_reason: trustPayload.audit_reason,
-                safety_flags: Array.isArray(trustPayload.safety_flags) ? trustPayload.safety_flags : [],
+                safety_flags: normalizeTrustSafetyFlags(trustPayload.safety_flags),
                 highlights: Array.isArray(trustPayload.highlights) ? trustPayload.highlights : [],
                 overall_summary: trustPayload.overall_summary,
                 ai_version: trustPayload.ai_version ?? null,

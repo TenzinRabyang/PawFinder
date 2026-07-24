@@ -2,6 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, ShieldQuestion, Star } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { TrustSafetyFlag } from "@/lib/trust-eval";
 
 export type TrustBadgeValue = "GREEN" | "YELLOW" | "RED" | "GRAY" | "UNAVAILABLE";
 
@@ -10,13 +11,29 @@ type TrustAndReviewsCardProps = {
   googleRating?: number | null;
   googleReviewCount?: number | null;
   auditReason?: string | null;
-  safetyFlags?: string[];
+  safetyFlags?: TrustSafetyFlag[];
   highlights?: string[];
   overallSummary?: string | null;
   isLoading?: boolean;
   hasError?: boolean;
   className?: string;
 };
+
+function formatSafetyCategoryLabel(category: string) {
+  return category
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getSafetyConfidenceLabel(flag: TrustSafetyFlag) {
+  if (flag.confidence === "confirmed") {
+    return flag.excerpt_count >= 2 ? "Confirmed by multiple reviews" : "Confirmed severe-harm report";
+  }
+
+  return "Single report - unverified";
+}
 
 const TRUST_BADGE_META: Record<
   Exclude<TrustBadgeValue, "UNAVAILABLE">,
@@ -98,7 +115,10 @@ export default function TrustAndReviewsCard({
         ? "Google review count unavailable"
         : "Google rating unavailable";
   const visibleTakeaways = useMemo(
-    () => Array.from(new Set((safetyFlags.length > 0 ? safetyFlags : highlights).filter(Boolean))),
+    () =>
+      safetyFlags.length > 0
+        ? safetyFlags.map((flag) => `${formatSafetyCategoryLabel(flag.category)} - ${getSafetyConfidenceLabel(flag)}`)
+        : Array.from(new Set(highlights.filter(Boolean))),
     [highlights, safetyFlags]
   );
   const isUnavailable = trustBadge === "UNAVAILABLE";
@@ -215,6 +235,52 @@ export default function TrustAndReviewsCard({
                   </p>
                 )}
               </div>
+
+              {safetyFlags.length > 0 ? (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8A6D32]">
+                    Safety Evidence
+                  </p>
+                  <div className="mt-3 space-y-3">
+                    {safetyFlags.map((flag) => (
+                      <details
+                        key={`${flag.category}-${flag.confidence}`}
+                        className="rounded-2xl border border-[#E7D8B8] bg-white/80 px-4 py-3"
+                      >
+                        <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-[#4E514B]">
+                              {formatSafetyCategoryLabel(flag.category)}
+                            </p>
+                            <p className="mt-1 text-xs font-medium text-[#8A6D32]">
+                              {getSafetyConfidenceLabel(flag)}
+                              {flag.excerpt_count > 0 ? ` · ${flag.excerpt_count} review reference${flag.excerpt_count === 1 ? "" : "s"}` : ""}
+                            </p>
+                          </div>
+                          <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-[#8A6D32]" />
+                        </summary>
+
+                        <div className="mt-3 space-y-2 border-t border-amber-200/60 pt-3">
+                          {flag.excerpts.length > 0 ? (
+                            flag.excerpts.map((excerpt) => (
+                              <blockquote
+                                key={`${flag.category}-${excerpt}`}
+                                className="rounded-xl border border-[#EFE2C3] bg-[#FFF9ED] px-3 py-2 text-sm leading-6 text-[#4E514B]"
+                              >
+                                &ldquo;{excerpt}&rdquo;
+                              </blockquote>
+                            ))
+                          ) : (
+                            <p className="text-sm leading-6 text-[#6A604F]">
+                              Supporting review excerpts are not available for this flag yet.
+                            </p>
+                          )}
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8A6D32]">
