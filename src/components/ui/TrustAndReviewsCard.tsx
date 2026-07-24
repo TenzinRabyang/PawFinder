@@ -29,10 +29,10 @@ function formatSafetyCategoryLabel(category: string) {
 
 function getSafetyConfidenceLabel(flag: TrustSafetyFlag) {
   if (flag.confidence === "confirmed") {
-    return flag.excerpt_count >= 2 ? "Confirmed by multiple reviews" : "Confirmed severe-harm report";
+    return flag.excerpt_count >= 2 ? "Supported by multiple reviews" : "Single detailed severe-harm report";
   }
 
-  return "Single report - unverified";
+  return "Single review mention - not corroborated";
 }
 
 const TRUST_BADGE_META: Record<

@@ -5,13 +5,20 @@ import { fileURLToPath } from "node:url";
 import { loadEnvConfig } from "@next/env";
 import { z } from "zod";
 
+const SAFETY_FLAG_SCHEMA = z.object({
+  category: z.string(),
+  confidence: z.enum(["confirmed", "low_confidence"]),
+  excerpt_count: z.number().int().nonnegative(),
+  excerpts: z.array(z.string()).default([]),
+});
+
 const OUTPUT_SCHEMA = z.object({
   trust_badge: z.enum(["GREEN", "YELLOW", "RED", "GRAY"]),
   audit_reason: z.string().describe("Short explanation for the badge assignment"),
   safety_flags: z
-    .array(z.string())
+    .array(z.union([z.string(), SAFETY_FLAG_SCHEMA]))
     .default([])
-    .describe("Direct quote substrings of any Level 2 or Level 3 safety/service issues found"),
+    .describe("Structured safety evidence or legacy string flags returned by the evaluator"),
   highlights: z.array(z.string()).default([]).describe("Key positive takeaways from the reviews"),
 });
 
@@ -46,7 +53,10 @@ const FIXTURE_SCHEMA = z.object({
 
 type Review = z.infer<typeof REVIEW_SCHEMA>;
 type Scenario = z.infer<typeof SCENARIO_SCHEMA>;
-type EvalResult = z.infer<typeof OUTPUT_SCHEMA>;
+type SafetyFlag = z.infer<typeof SAFETY_FLAG_SCHEMA>;
+type EvalResult = Omit<z.infer<typeof OUTPUT_SCHEMA>, "safety_flags"> & {
+  safety_flags: string[];
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,15 +112,24 @@ function collectReviewTexts(reviews: Review[]) {
   return reviews.map((review) => review.text);
 }
 
-function normalizeSafetyFlags(flags: string[], reviews: Review[]) {
+function normalizeSafetyFlags(flags: Array<string | SafetyFlag>, reviews: Review[]) {
   const reviewTexts = collectReviewTexts(reviews);
 
-  return flags.filter((flag, index, array) => {
-    const trimmed = flag.trim();
-    if (!trimmed) return false;
+  const flattenedFlags = flags.flatMap((flag) => {
+    if (typeof flag === "string") {
+      return [flag.trim()];
+    }
+
+    const category = flag.category.trim();
+    const excerpts = flag.excerpts.map((excerpt) => excerpt.trim()).filter(Boolean);
+    return [category, ...excerpts].filter(Boolean);
+  });
+
+  return flattenedFlags.filter((flag, index, array) => {
+    if (!flag) return false;
     if (array.indexOf(flag) !== index) return false;
 
-    return reviewTexts.some((text) => text.includes(trimmed));
+    return reviewTexts.some((text) => text.includes(flag));
   });
 }
 

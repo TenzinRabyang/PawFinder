@@ -257,10 +257,10 @@ export function buildHybridTrustEvaluationSystemPrompt({
     "Additional rules:",
     "Complaints older than 2 years carry minimal weight unless they are critical safety issues.",
     "Never fabricate evidence. Every safety_flag must be grounded in the supplied reviews only.",
-    "Do not include reviewer names, staff names, or business-owner names in excerpts.",
+    "Do not include reviewer names, staff names, business-owner names, exact addresses, or postcodes in excerpts.",
     "safety_flags must be objects with keys: category, confidence, excerpt_count, excerpts.",
     'Use short lowercase category labels such as "injury", "escape", "abuse", "death", "unauthorized_treatment", or "theft".',
-    'excerpts must contain 1 to 3 short supporting snippets, each from a relevant review, each no more than 25 words, trimmed/redacted of names.',
+    'excerpts must contain 1 to 3 short supporting snippets, each from a relevant review, each no more than 25 words, trimmed/redacted of names and address details.',
     "highlights must remain short paraphrased topic phrases, not full sentences.",
     `Return at most ${MAX_TOPIC_POINTS} safety_flags and at most ${MAX_TOPIC_POINTS} highlights.`,
     "audit_reason must be a short plain-English explanation for the final badge.",
@@ -323,11 +323,23 @@ function redactPotentialNames(value: string) {
   return value
     .replace(/\bby\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\b/g, "by [redacted]")
     .replace(/\b(?:mr|mrs|ms|dr)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b/gi, "[redacted]")
+    .replace(/\b[A-Z][a-z]{2,}(?=\s+(?:said|told|wrote|mentioned|explained|claimed|reported|called)\b)/g, "[redacted]")
     .replace(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){1,2}\b/g, "[redacted]");
 }
 
+function redactAddressDetails(value: string) {
+  return value
+    .replace(
+      /\b\d{1,4}[A-Za-z]?\s+[A-Za-z0-9' -]{1,40}\s(?:street|st|road|rd|lane|ln|avenue|ave|drive|dr|close|court|ct|way|place|pl|crescent|cres|terrace|parade|gardens|park|hill)\b/gi,
+      "[redacted address]"
+    )
+    .replace(/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi, "[redacted postcode]");
+}
+
 function normalizeExcerpt(value: string) {
-  const collapsed = redactPotentialNames(value.replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, ""));
+  const collapsed = redactPotentialNames(
+    redactAddressDetails(value.replace(/\s+/g, " ").trim().replace(/^["'\s]+|["'\s]+$/g, ""))
+  );
   if (!collapsed) return "";
 
   const words = collapsed.split(/\s+/).filter(Boolean);
